@@ -1,0 +1,19 @@
+
+==============================================================================
+PUNTO 50b — Columnas que no están en ningún índice (cantidad_huespedes, observaciones)
+==============================================================================
+Un mes         reserva           17.3 ms | shared hit=3112 | ['Bitmap Heap Scan  on reserva', 'Bitmap Index Scan  on ix_reserva_fecha_inicio']
+Un mes         reserva_part      47.2 ms | shared hit=39343 | ['Index Scan  using reserva_p2024_fecha_inicio_idx  on reserva_p2024']
+Un trimestre   reserva           39.1 ms | shared hit=4910 | ['Bitmap Heap Scan  on reserva', 'Bitmap Index Scan  on ix_reserva_fecha_inicio']
+Un trimestre   reserva_part      93.2 ms | shared hit=103798 | ['Index Scan  using reserva_p2024_fecha_inicio_idx  on reserva_p2024']
+Un año         reserva          103.5 ms | shared hit=11153 | ['Bitmap Heap Scan  on reserva', 'Bitmap Index Scan  on ix_reserva_fecha_inicio']
+Un año         reserva_part      87.6 ms | shared hit=7972 | ['Seq Scan  on reserva_p2024']
+Dos años       reserva          197.3 ms | shared hit=19644 | ['Bitmap Heap Scan  on reserva', 'Bitmap Index Scan  on ix_reserva_fecha_inicio']
+Dos años       reserva_part     154.3 ms | shared hit=15930 | ['Append', 'Seq Scan  on reserva_p2023']
+
+==============================================================================
+PUNTO 51b — enable_partition_pruning = off
+==============================================================================
+enable_partition_pruning = on: particiones visitadas 1 | 9.831 ms | shared hit=61
+enable_partition_pruning = off: particiones visitadas 14 | 15.936 ms | shared hit=97
+FIN

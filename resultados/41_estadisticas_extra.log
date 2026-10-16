@@ -1,0 +1,89 @@
+
+==============================================================================
+PUNTO 31b — Columnas correlacionadas por igualdad: tipo_documento y nacionalidad
+==============================================================================
+conteo real: [('DNI', True, 850294), ('PASAPORTE', False, 149706)]
+--- Sin estadísticas multicolumna
+Aggregate  (cost=19311.58..19311.59 rows=1 width=8) (actual time=90.627..90.630 rows=1 loops=1)
+  Buffers: shared hit=32 read=12188
+  ->  Bitmap Heap Scan on huesped  (cost=5226.44..18988.93 rows=129058 width=0) (actual time=90.621..90.623 rows=0 loops=1)
+        Recheck Cond: ((tipo_documento)::text = 'PASAPORTE'::text)
+        Filter: (nacionalidad_id = 1)
+        Rows Removed by Filter: 149706
+        Heap Blocks: exact=11479
+        Buffers: shared hit=32 read=12188
+        ->  Bitmap Index Scan on uq_huesped_documento  (cost=0.00..5194.17 rows=152233 width=0) (actual time=10.485..10.486 rows=149706 loops=1)
+              Index Cond: ((tipo_documento)::text = 'PASAPORTE'::text)
+              Buffers: shared read=741
+Planning:
+  Buffers: shared hit=4 read=1
+Planning Time: 0.211 ms
+Execution Time: 90.756 ms
+--- Con CREATE STATISTICS (dependencies, mcv) ON tipo_documento, nacionalidad_id
+Aggregate  (cost=18841.69..18841.70 rows=1 width=8) (actual time=41.510..41.513 rows=1 loops=1)
+  Buffers: shared hit=12220
+  ->  Bitmap Heap Scan on huesped  (cost=5113.18..18841.68 rows=1 width=0) (actual time=41.503..41.505 rows=0 loops=1)
+        Recheck Cond: ((tipo_documento)::text = 'PASAPORTE'::text)
+        Filter: (nacionalidad_id = 1)
+        Rows Removed by Filter: 149706
+        Heap Blocks: exact=11479
+        Buffers: shared hit=12220
+        ->  Bitmap Index Scan on uq_huesped_documento  (cost=0.00..5113.18 rows=149967 width=0) (actual time=5.878..5.879 rows=149706 loops=1)
+              Index Cond: ((tipo_documento)::text = 'PASAPORTE'::text)
+              Buffers: shared hit=741
+Planning:
+  Buffers: shared hit=15
+Planning Time: 0.191 ms
+Execution Time: 41.552 ms
+dependencias medidas: ('{"2 => 7": 0.850033, "7 => 2": 1.000000}',)
+
+==============================================================================
+PUNTO 31c — Estadísticas viejas que cambian el método de JOIN
+==============================================================================
+
+--- Antes de ANALYZE (el optimizador cree que no hay filas de 2030)
+mediana 2981.77 ms | filas 50 | shared hit=2738397 read=35902, temp read=890 written=896
+nodos: ['GroupAggregate', 'Sort', 'Sort', 'Sort', 'Nested Loop', 'Index Scan  using r_stats_fecha_inicio_idx  on r_stats']
+GroupAggregate  (cost=22983.60..23009.23 rows=50 width=15) (actual time=2873.031..2966.992 rows=50 loops=1)
+  Group Key: hu.apellido
+  Buffers: shared hit=2738397 read=35902, temp read=890 written=896
+  ->  Sort  (cost=22983.60..22991.98 rows=3351 width=7) (actual time=2871.557..2924.269 rows=603241 loops=1)
+        Sort Key: hu.apellido
+        Sort Method: external merge  Disk: 7120kB
+        Buffers: shared hit=2738397 read=35902, temp read=890 written=896
+        ->  Nested Loop  (cost=0.85..22787.39 rows=3351 width=7) (actual time=0.038..2715.339 rows=603241 loops=1)
+              Buffers: shared hit=2738397 read=35902
+              ->  Index Scan using r_stats_fecha_inicio_idx on r_stats r  (cost=0.43..1280.58 rows=3351 width=8) (actual time=0.027..515.749 rows=603241 loops=1)
+                    Index Cond: (fecha_inicio >= '2030-01-01'::date)
+                    Buffers: shared hit=353189 read=8146
+              ->  Index Scan using huesped_pkey on huesped hu  (cost=0.42..6.42 rows=1 width=15) (actual time=0.003..0.003 rows=1 loops=603241)
+                    Index Cond: (huesped_id = r.huesped_id)
+                    Buffers: shared hit=2385208 read=27756
+Planning:
+  Buffers: shared hit=9 read=3
+Planning Time: 0.296 ms
+Execution Time: 2968.051 ms
+
+--- Después de ANALYZE
+mediana 896.68 ms | filas 50 | shared hit=366940 read=5874, temp read=8437 written=8437
+nodos: ['HashAggregate', 'Hash Join', 'Index Scan  using r_stats_fecha_inicio_idx  on r_stats', 'Seq Scan  on huesped']
+HashAggregate  (cost=75025.40..75025.90 rows=50 width=15) (actual time=1163.333..1163.343 rows=50 loops=1)
+  Group Key: hu.apellido
+  Batches: 1  Memory Usage: 24kB
+  Buffers: shared hit=366940 read=5874, temp read=8437 written=8437
+  ->  Hash Join  (cost=38862.43..72023.08 rows=600463 width=7) (actual time=288.855..1068.741 rows=603241 loops=1)
+        Hash Cond: (r.huesped_id = hu.huesped_id)
+        Buffers: shared hit=366940 read=5874, temp read=8437 written=8437
+        ->  Index Scan using r_stats_fecha_inicio_idx on r_stats r  (cost=0.43..22009.86 rows=600463 width=8) (actual time=0.022..341.655 rows=603241 loops=1)
+              Index Cond: (fecha_inicio >= '2030-01-01'::date)
+              Buffers: shared hit=361335
+        ->  Hash  (cost=21479.00..21479.00 rows=1000000 width=15) (actual time=288.478..288.480 rows=1000000 loops=1)
+              Buckets: 262144 (originally 262144)  Batches: 16 (originally 8)  Memory Usage: 6145kB
+              Buffers: shared hit=5605 read=5874, temp written=4430
+              ->  Seq Scan on huesped hu  (cost=0.00..21479.00 rows=1000000 width=15) (actual time=0.010..106.931 rows=1000000 loops=1)
+                    Buffers: shared hit=5605 read=5874
+Planning:
+  Buffers: shared hit=8
+Planning Time: 0.284 ms
+Execution Time: 1163.411 ms
+FIN

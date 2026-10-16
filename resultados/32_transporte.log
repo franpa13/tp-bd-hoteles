@@ -1,0 +1,87 @@
+
+==============================================================================
+PUNTO 28 — Pocas/muchas filas y pocas/muchas columnas
+==============================================================================
+1 fila, 2 columnas (por PK)                                filas         1 | servidor      0.1 ms | cliente      0.4 ms | ~   0.00 MB
+unknown PostgreSQL timezone: 'AMERICA0'; will use UTC
+1 fila, SELECT * con JOIN a 4 tablas (muchas columnas)     filas         1 | servidor      0.6 ms | cliente      0.9 ms | ~   0.00 MB
+Agregado de un año en el servidor (1 fila)                 filas         1 | servidor    147.1 ms | cliente     71.4 ms | ~   0.00 MB
+Un año, 2 columnas                                         filas   604,593 | servidor    198.0 ms | cliente    482.9 ms | ~   7.59 MB
+Un año, SELECT * (11 columnas)                             filas   604,593 | servidor    125.7 ms | cliente   1432.8 ms | ~  57.33 MB
+Un año, SELECT * con JOIN a 4 tablas (~40 columnas)        filas   604,593 | servidor   1465.4 ms | cliente  11601.0 ms | ~ 174.32 MB
+
+==============================================================================
+SELECT * vs columnas necesarias con índice de cobertura
+==============================================================================
+
+--- Columnas necesarias (Index Only Scan posible)
+mediana 34.71 ms | filas 83260 | shared hit=3023
+nodos: ['Index Only Scan  using ix_tmp_hue_fecha  on reserva']
+
+--- SELECT * (obliga a ir a la tabla)
+mediana 328.33 ms | filas 83260 | shared hit=56565
+nodos: ['Bitmap Heap Scan  on reserva', 'Bitmap Index Scan  on ix_reserva_huesped_fecha']
+
+==============================================================================
+LIMIT
+==============================================================================
+
+--- ORDER BY fecha_inicio DESC LIMIT 20 (índice entrega el orden)
+mediana 0.41 ms | filas 20 | shared hit=13
+nodos: ['Index Scan']
+
+--- ORDER BY tarifa_noche DESC LIMIT 20 (sin índice: top-N heapsort)
+mediana 770.05 ms | filas 20 | shared hit=94999 read=4113
+nodos: ['Sort', 'Sort', 'Sort', 'Seq Scan  on reserva']
+Limit  (cost=374922.99..374923.04 rows=20 width=72) (actual time=1356.986..1356.991 rows=20 loops=1)
+  Buffers: shared hit=94999 read=4113
+  I/O Timings: shared read=9.587
+  ->  Sort  (cost=374922.99..393757.58 rows=7533835 width=72) (actual time=1355.739..1355.741 rows=20 loops=1)
+        Sort Key: tarifa_noche DESC NULLS LAST
+        Sort Method: top-N heapsort  Memory: 27kB
+        Buffers: shared hit=94999 read=4113
+        I/O Timings: shared read=9.587
+        ->  Seq Scan on reserva  (cost=0.00..174450.35 rows=7533835 width=72) (actual time=0.019..558.236 rows=7535580 loops=1)
+              Buffers: shared hit=94999 read=4113
+              I/O Timings: shared read=9.587
+Planning Time: 0.108 ms
+JIT:
+  Functions: 1
+  Options: Inlining false, Optimization false, Expressions true, Deforming true
+  Timing: Generation 0.129 ms, Inlining 0.000 ms, Optimization 0.155 ms, Emission 1.084 ms, Total 1.368 ms
+Execution Time: 1357.209 ms
+
+--- Sin LIMIT y cortando en el cliente (trae todo el año)
+mediana 1718.72 ms | filas 604593 | shared hit=11153, temp read=12621 written=12639
+nodos: ['Sort', 'Sort', 'Sort', 'Bitmap Heap Scan  on reserva', 'Bitmap Index Scan  on ix_reserva_fecha_inicio']
+
+==============================================================================
+Paginación: OFFSET vs keyset, páginas de 50 filas ordenadas por reserva_id
+==============================================================================
+página       1 (OFFSET         0): OFFSET      0.46 ms [shared hit=4] | keyset   0.20 ms [shared hit=4]
+página     100 (OFFSET     4,950): OFFSET      0.92 ms [shared hit=95] | keyset   0.24 ms [shared hit=5]
+página  10,000 (OFFSET   499,950): OFFSET     51.71 ms [shared hit=9329] | keyset   0.37 ms [shared hit=6]
+página 100,000 (OFFSET 4,999,950): OFFSET    483.73 ms [shared hit=93515] | keyset   0.37 ms [shared hit=5]
+página 150,000 (OFFSET 7,499,950): OFFSET    704.27 ms [shared hit=139745] | keyset   0.35 ms [shared hit=5]
+
+Keyset con orden compuesto (fecha_inicio, reserva_id):
+
+--- página siguiente después de (2024-07-01, 4000000)
+mediana 1.44 ms | filas 50 | shared hit=951
+nodos: ['Sort', 'Sort', 'Sort', 'Sort', 'Index Scan  using ix_reserva_fecha_inicio  on reserva']
+Limit  (cost=103.16..117.11 rows=50 width=12) (actual time=0.767..0.773 rows=50 loops=1)
+  Buffers: shared hit=951
+  ->  Incremental Sort  (cost=103.16..490572.82 rows=1756871 width=12) (actual time=0.766..0.769 rows=50 loops=1)
+        Sort Key: fecha_inicio, reserva_id
+        Presorted Key: fecha_inicio
+        Full-sort Groups: 1  Sort Method: quicksort  Average Memory: 27kB  Peak Memory: 27kB
+        Pre-sorted Groups: 1  Sort Method: top-N heapsort  Average Memory: 26kB  Peak Memory: 26kB
+        Buffers: shared hit=951
+        ->  Index Scan using ix_reserva_fecha_inicio on reserva  (cost=0.43..410158.72 rows=1756871 width=12) (actual time=0.013..0.640 rows=1363 loops=1)
+              Index Cond: (fecha_inicio >= '2024-07-01'::date)
+              Filter: (ROW(fecha_inicio, reserva_id) > ROW('2024-07-01'::date, 4000000))
+              Buffers: shared hit=951
+Planning Time: 0.081 ms
+Execution Time: 0.789 ms
+
+FIN

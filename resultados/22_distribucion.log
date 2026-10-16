@@ -1,0 +1,175 @@
+SET
+Pager usage is off.
+SET
+--- Reservas por estado
+ estado |  count  |  pct  
+--------+---------+-------
+ F      | 6116023 | 81.16
+ X      |  753914 | 10.00
+ N      |  284356 |  3.77
+ C      |  232557 |  3.09
+ P      |  148730 |  1.97
+(5 rows)
+
+--- Reservas por año
+ anio | count  
+------+--------
+ 2015 | 603241
+ 2016 | 605005
+ 2017 | 602498
+ 2018 | 602992
+ 2019 | 602138
+ 2020 | 604906
+ 2021 | 602764
+ 2022 | 602740
+ 2023 | 603475
+ 2024 | 604593
+ 2025 | 603919
+ 2026 | 599638
+ 2027 | 297671
+(13 rows)
+
+--- Estacionalidad: reservas por mes de inicio (2016-2025)
+ mes | count  
+-----+--------
+   1 | 670125
+   2 | 625418
+   3 | 534655
+   4 | 423618
+   5 | 425213
+   6 | 412015
+   7 | 648866
+   8 | 446671
+   9 | 409972
+  10 | 507591
+  11 | 423375
+  12 | 507511
+(12 rows)
+
+--- Duración de las estadías
+ noches |  count  | pct  
+--------+---------+------
+      1 | 1507165 | 20.0
+      2 | 1883762 | 25.0
+      3 | 1507584 | 20.0
+      4 |  905126 | 12.0
+      5 |  602426 |  8.0
+      6 |  377714 |  5.0
+      7 |  376072 |  5.0
+     10 |  225714 |  3.0
+     14 |  150017 |  2.0
+(9 rows)
+
+--- Concentración por huésped: reservas por huésped
+ huespedes_con_reserva | huespedes_sin_reserva | maximo | promedio | mediana 
+-----------------------+-----------------------+--------+----------+---------
+                989826 |                 10174 |  14054 |      7.6 |       5
+(1 row)
+
+ decil | reservas | pct_del_total 
+-------+----------+---------------
+     1 |  2722520 |          36.1
+     2 |  1065419 |          14.1
+     3 |   818674 |          10.9
+     4 |   670940 |           8.9
+     5 |   579364 |           7.7
+     6 |   494915 |           6.6
+     7 |   409550 |           5.4
+     8 |   347179 |           4.6
+     9 |   270003 |           3.6
+    10 |   157016 |           2.1
+(10 rows)
+
+--- Concentración por hotel: los 5 más y los 5 menos reservados
+ hotel_id |             nombre              | categoria | reservas 
+----------+---------------------------------+-----------+----------
+       87 | Hotel San Carlos de Bariloche 9 |         5 |   153438
+       31 | Hotel Mar del Plata 6           |         5 |   142957
+       37 | Hotel Córdoba 4                 |         5 |   135683
+       71 | Hotel San Salvador de Jujuy 4   |         5 |   130507
+       99 | Hotel Puerto Iguazú 6           |         5 |   117083
+        2 | Hotel Buenos Aires 2            |         2 |    13679
+       47 | Hotel Mendoza 2                 |         2 |    14830
+       86 | Hotel San Carlos de Bariloche 8 |         2 |    17826
+      110 | Hotel El Calafate 4             |         2 |    18003
+      100 | Hotel Puerto Iguazú 7           |         2 |    20725
+(10 rows)
+
+--- Apellidos más y menos frecuentes (sesgo de la distribución)
+ apellido  | count 
+-----------+-------
+ González  | 86802
+ Rodríguez | 47177
+ Gómez     | 39034
+ Fernández | 33942
+ López     | 30983
+ Ledesma   | 12375
+ Villalba  | 12662
+ Paredes   | 12779
+ Choque    | 12891
+ Guzmán    | 12952
+(10 rows)
+
+--- Lo que ve el optimizador: valores más comunes de estado
+ most_common_vals |              most_common_freqs               
+------------------+----------------------------------------------
+ {F,X,N,C,P}      | {0.8139333,0.1007,0.0387,0.028866667,0.0178}
+(1 row)
+
+--- Consecuencia del sesgo: mismo SQL, distinto plan según el valor
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
+ Aggregate (actual time=85.195..85.197 rows=1 loops=1)
+   Buffers: shared hit=4377 read=7102
+   ->  Seq Scan on huesped (actual time=0.006..80.423 rows=86802 loops=1)
+         Filter: ((apellido)::text = 'González'::text)
+         Rows Removed by Filter: 913198
+         Buffers: shared hit=4377 read=7102
+ Planning Time: 0.051 ms
+ Execution Time: 85.225 ms
+(8 rows)
+
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
+ Aggregate (actual time=75.912..75.914 rows=1 loops=1)
+   Buffers: shared hit=4409 read=7070
+   ->  Seq Scan on huesped (actual time=0.026..75.030 rows=12779 loops=1)
+         Filter: ((apellido)::text = 'Paredes'::text)
+         Rows Removed by Filter: 987221
+         Buffers: shared hit=4409 read=7070
+ Planning Time: 0.122 ms
+ Execution Time: 75.942 ms
+(8 rows)
+
+                                            QUERY PLAN                                             
+---------------------------------------------------------------------------------------------------
+ Aggregate (actual time=61.484..61.486 rows=1 loops=1)
+   Buffers: shared hit=17 read=13022 written=456
+   ->  Bitmap Heap Scan on reserva (actual time=3.102..59.238 rows=14054 loops=1)
+         Recheck Cond: (huesped_id = 1)
+         Heap Blocks: exact=13022
+         Buffers: shared hit=17 read=13022 written=456
+         ->  Bitmap Index Scan on ix_reserva_huesped (actual time=1.474..1.474 rows=14054 loops=1)
+               Index Cond: (huesped_id = 1)
+               Buffers: shared hit=17
+ Planning:
+   Buffers: shared hit=14
+ Planning Time: 0.144 ms
+ Execution Time: 61.519 ms
+(13 rows)
+
+                                          QUERY PLAN                                           
+-----------------------------------------------------------------------------------------------
+ Aggregate (actual time=0.046..0.047 rows=1 loops=1)
+   Buffers: shared hit=2 read=3
+   ->  Bitmap Heap Scan on reserva (actual time=0.033..0.039 rows=2 loops=1)
+         Recheck Cond: (huesped_id = 900000)
+         Heap Blocks: exact=2
+         Buffers: shared hit=2 read=3
+         ->  Bitmap Index Scan on ix_reserva_huesped (actual time=0.024..0.025 rows=2 loops=1)
+               Index Cond: (huesped_id = 900000)
+               Buffers: shared hit=2 read=1
+ Planning Time: 0.104 ms
+ Execution Time: 0.077 ms
+(11 rows)
+

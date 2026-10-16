@@ -1,0 +1,6 @@
+.env
+__pycache__/
+*.pyc
+# el CSV de reservas pesa ~680 MB: se genera con sql/11_generar_reservas.py
+*.csv
+.venv/

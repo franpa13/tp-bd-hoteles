@@ -1,0 +1,74 @@
+SET
+Timing is on.
+CREATE INDEX
+Time: 2725.765 ms (00:02.726)
+CREATE INDEX
+Time: 1036.974 ms (00:01.037)
+CREATE INDEX
+Time: 341.162 ms
+CREATE INDEX
+Time: 1317.430 ms (00:01.317)
+ANALYZE
+Time: 859.344 ms
+        tabla         |             indice             | tipo  |   tam   
+----------------------+--------------------------------+-------+---------
+ reserva              | ex_reserva_superpuesta         | gist  | 429 MB
+ reserva              | reserva_pkey                   | btree | 161 MB
+ huesped_telefono     | uq_huesped_telefono            | btree | 94 MB
+ huesped_email        | uq_huesped_email               | btree | 92 MB
+ reserva              | ix_reserva_huesped             | btree | 72 MB
+ huesped              | uq_huesped_documento           | btree | 52 MB
+ reserva              | ix_reserva_fecha_inicio        | btree | 52 MB
+ huesped_email        | ix_huesped_email_lower         | btree | 50 MB
+ huesped_telefono     | ix_huesped_telefono_h          | btree | 43 MB
+ huesped_email        | ix_huesped_email_h             | btree | 38 MB
+ huesped_telefono     | huesped_telefono_pkey          | btree | 29 MB
+ huesped_email        | huesped_email_pkey             | btree | 23 MB
+ huesped              | huesped_domicilio_id_key       | btree | 21 MB
+ huesped              | ix_huesped_fecha_registro      | btree | 21 MB
+ domicilio            | domicilio_pkey                 | btree | 21 MB
+ huesped_telefono     | uq_huesped_telefono_principal  | btree | 21 MB
+ huesped              | huesped_pkey                   | btree | 21 MB
+ huesped_email        | uq_huesped_email_principal     | btree | 20 MB
+ huesped              | ix_huesped_apellido_nombre     | btree | 7184 kB
+ domicilio            | ix_domicilio_localidad         | btree | 6392 kB
+ habitacion_comodidad | habitacion_comodidad_pkey      | btree | 1520 kB
+ tarifa               | ex_tarifa_solapada             | gist  | 536 kB
+ habitacion_comodidad | ix_hab_comodidad_comodidad     | btree | 512 kB
+ tarifa               | tarifa_pkey                    | btree | 232 kB
+ habitacion           | uq_habitacion_numero           | btree | 184 kB
+ habitacion           | habitacion_pkey                | btree | 184 kB
+ habitacion           | ix_habitacion_tipo             | btree | 72 kB
+ hotel_contacto       | uq_hotel_contacto              | btree | 48 kB
+ hotel_punto_interes  | hotel_punto_interes_pkey       | btree | 40 kB
+ hotel_contacto       | hotel_contacto_pkey            | btree | 32 kB
+ hotel_contacto       | uq_hotel_contacto_principal    | btree | 32 kB
+ estado_reserva       | estado_reserva_descripcion_key | btree | 16 kB
+ localidad            | uq_localidad                   | btree | 16 kB
+ localidad            | localidad_pkey                 | btree | 16 kB
+ provincia            | ix_provincia_pais              | btree | 16 kB
+ hotel_contacto       | ix_hotel_contacto_tipo         | btree | 16 kB
+ punto_interes        | ix_punto_interes_localidad     | btree | 16 kB
+ hotel_punto_interes  | ix_hpi_punto                   | btree | 16 kB
+ provincia            | uq_provincia                   | btree | 16 kB
+ provincia            | provincia_pkey                 | btree | 16 kB
+ pais                 | pais_nombre_key                | btree | 16 kB
+ pais                 | pais_codigo_iso_key            | btree | 16 kB
+ pais                 | pais_pkey                      | btree | 16 kB
+ punto_interes        | punto_interes_pkey             | btree | 16 kB
+ hotel                | hotel_domicilio_id_key         | btree | 16 kB
+ punto_interes        | uq_punto_interes               | btree | 16 kB
+ tipo_habitacion      | tipo_habitacion_pkey           | btree | 16 kB
+ tipo_habitacion      | tipo_habitacion_nombre_key     | btree | 16 kB
+ comodidad            | comodidad_pkey                 | btree | 16 kB
+ comodidad            | comodidad_nombre_key           | btree | 16 kB
+ hotel                | hotel_nombre_key               | btree | 16 kB
+ tipo_punto_interes   | tipo_punto_interes_nombre_key  | btree | 16 kB
+ tipo_punto_interes   | tipo_punto_interes_pkey        | btree | 16 kB
+ tipo_contacto        | tipo_contacto_nombre_key       | btree | 16 kB
+ tipo_contacto        | tipo_contacto_pkey             | btree | 16 kB
+ hotel                | hotel_pkey                     | btree | 16 kB
+ estado_reserva       | estado_reserva_pkey            | btree | 16 kB
+(57 rows)
+
+Time: 2.426 ms

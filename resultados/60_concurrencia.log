@@ -1,0 +1,167 @@
+
+==============================================================================
+PUNTO 38 — Bloqueos de tabla y de fila
+==============================================================================
+
+>> 38.1 LOCK TABLE ... IN ACCESS EXCLUSIVE MODE bloquea hasta las lecturas
+[  0.01s] A: LOCK TABLE reserva IN ACCESS EXCLUSIVE MODE
+[  0.01s] B: ejecuta  SELECT tarifa_noche FROM reserva WHERE reserva_id = 1000
+        pg_stat_activity: ('A', 'Client', 'ClientRead', [], 'LOCK TABLE reserva IN ACCESS EXCLUSIVE MODE')
+        pg_stat_activity: ('B', 'Lock', 'relation', [1156], 'SELECT tarifa_noche FROM reserva WHERE reserva_id = 1000')
+        pg_locks: ('A', 'transactionid', '', 'ExclusiveLock', True)
+        pg_locks: ('A', 'relation', 'reserva', 'AccessExclusiveLock', True)
+        pg_locks: ('B', 'relation', 'reserva', 'AccessShareLock', False)
+[  1.52s] A: COMMIT
+[  1.52s] B: terminó  -> [(Decimal('422.68'),)]
+
+>> 38.2 LOCK TABLE ... IN SHARE MODE: deja leer, bloquea escribir
+[  1.52s] A: LOCK TABLE reserva IN SHARE MODE
+[  1.52s] B: ejecuta  SELECT tarifa_noche FROM reserva WHERE reserva_id = 1000
+[  1.52s] B: terminó  -> [(Decimal('422.68'),)]
+[  1.52s] B: ejecuta  UPDATE reserva SET observaciones = 'B' WHERE reserva_id = 1000
+        pg_stat_activity: ('A', 'Client', 'ClientRead', [], 'LOCK TABLE reserva IN SHARE MODE')
+        pg_stat_activity: ('B', 'Lock', 'relation', [1156], "UPDATE reserva SET observaciones = 'B' WHERE reserva_id = 10")
+        pg_locks: ('A', 'relation', 'reserva', 'ShareLock', True)
+        pg_locks: ('B', 'relation', 'reserva', 'RowExclusiveLock', False)
+[  3.03s] A: COMMIT
+[  3.03s] B: terminó  -> None
+
+>> 38.3 Bloqueo compartido de fila (FOR SHARE): otro FOR SHARE convive, UPDATE espera
+unknown PostgreSQL timezone: 'AMERICA0'; will use UTC
+[  3.03s] A: SELECT ... FOR SHARE (reserva 1000)
+[  3.03s] B: ejecuta  SELECT reserva_id FROM reserva WHERE reserva_id = 1000 FOR SHARE
+[  3.04s] B: terminó  -> [(1000,)]
+[  3.04s] B: ejecuta  UPDATE reserva SET observaciones = 'B' WHERE reserva_id = 1000
+        pg_stat_activity: ('A', 'Client', 'ClientRead', [], 'SELECT * FROM reserva WHERE reserva_id = 1000 FOR SHARE')
+        pg_stat_activity: ('B', 'Lock', 'transactionid', [1156], "UPDATE reserva SET observaciones = 'B' WHERE reserva_id = 10")
+        pg_locks: ('A', 'relation', 'reserva', 'RowShareLock', True)
+        pg_locks: ('A', 'transactionid', '', 'ExclusiveLock', True)
+        pg_locks: ('B', 'relation', 'reserva', 'RowExclusiveLock', True)
+        pg_locks: ('B', 'tuple', 'reserva', 'ExclusiveLock', True)
+        pg_locks: ('B', 'transactionid', '', 'ShareLock', False)
+[  4.54s] A: ROLLBACK
+[  4.54s] B: terminó  -> None
+
+>> 38.4 Bloqueo exclusivo de fila (FOR UPDATE): una lectura simple NO espera (MVCC), otro FOR UPDATE sí
+[  4.54s] A: SELECT ... FOR UPDATE (reserva 1000)
+[  4.54s] B: ejecuta  SELECT tarifa_noche FROM reserva WHERE reserva_id = 1000
+[  4.54s] B: terminó  -> [(Decimal('422.68'),)]
+[  4.54s] B: ejecuta  SELECT tarifa_noche FROM reserva WHERE reserva_id = 1000 FOR UPDATE NO
+[  4.55s] B: ERROR    -> could not obtain lock on row in relation "reserva"
+[  4.55s] B: ejecuta  SELECT reserva_id FROM reserva WHERE reserva_id IN (1000,2000) FOR UPD
+[  4.55s] B: terminó  -> [(2000,)]
+[  4.55s] A: ROLLBACK
+
+==============================================================================
+PUNTO 39 — Dos conexiones modificando y leyendo el mismo registro
+==============================================================================
+tarifa original de la reserva 1000: 422.68
+[  4.55s] A: UPDATE tarifa +100 (sin COMMIT)
+[  4.55s] B: ejecuta  SELECT tarifa_noche FROM reserva WHERE reserva_id = 1000
+[  4.55s] B: terminó  -> [(Decimal('422.68'),)]
+[  4.55s] B: ejecuta  UPDATE reserva SET tarifa_noche = tarifa_noche + 1 WHERE reserva_id = 
+        pg_stat_activity: ('A', 'Client', 'ClientRead', [], 'UPDATE reserva SET tarifa_noche = tarifa_noche + 100 WHERE r')
+        pg_stat_activity: ('B', 'Lock', 'transactionid', [1156], 'UPDATE reserva SET tarifa_noche = tarifa_noche + 1 WHERE res')
+        pg_locks: ('A', 'relation', 'reserva', 'RowExclusiveLock', True)
+        pg_locks: ('A', 'transactionid', '', 'ExclusiveLock', True)
+        pg_locks: ('B', 'relation', 'reserva', 'RowExclusiveLock', True)
+        pg_locks: ('B', 'tuple', 'reserva', 'ExclusiveLock', True)
+        pg_locks: ('B', 'transactionid', '', 'ShareLock', False)
+[  6.56s] A: COMMIT
+[  6.56s] B: terminó  -> [(Decimal('523.68'),)]
+[  6.56s] M: valor final: 523.68 (B aplicó su +1 sobre el valor confirmado por A: no hay actualización perdida)
+
+>> 39.2 Carrera por la misma habitación: dos reservas superpuestas simultáneas
+[  6.59s] A: INSERT habitación 617 del 10 al 15/03/2029 (sin COMMIT)
+[  6.59s] B: ejecuta  INSERT INTO reserva (habitacion_id, huesped_id, fecha_inicio, fecha_fi
+        pg_stat_activity: ('A', 'Client', 'ClientRead', [], 'INSERT INTO reserva (habitacion_id, huesped_id, fecha_inicio')
+        pg_stat_activity: ('B', 'Lock', 'transactionid', [1156], 'INSERT INTO reserva (habitacion_id, huesped_id, fecha_inicio')
+        pg_locks: ('A', 'relation', 'reserva', 'RowExclusiveLock', True)
+        pg_locks: ('A', 'transactionid', '', 'ExclusiveLock', True)
+        pg_locks: ('B', 'relation', 'reserva', 'RowExclusiveLock', True)
+        pg_locks: ('B', 'transactionid', '', 'ExclusiveLock', True)
+        pg_locks: ('B', 'transactionid', '', 'ShareLock', False)
+[  8.60s] A: COMMIT
+[  8.60s] B: ERROR    -> conflicting key value violates exclusion constraint "ex_reserva_superpuesta"
+   -> repetimos, pero A hace ROLLBACK:
+[  8.60s] A: INSERT (sin COMMIT)
+[  8.60s] B: ejecuta  INSERT INTO reserva (habitacion_id, huesped_id, fecha_inicio, fecha_fi
+[ 10.10s] A: ROLLBACK
+[ 10.11s] B: terminó  -> None
+
+==============================================================================
+PUNTO 40 — Niveles de aislamiento
+==============================================================================
+
+>> 40.1 Dirty read con READ UNCOMMITTED
+[ 10.11s] A: UPDATE tarifa = 1 (sin COMMIT)
+[ 10.11s] B: lee: 422.68  (no ve el 1: PostgreSQL trata READ UNCOMMITTED como READ COMMITTED)
+
+>> 40.2 Non-repeatable read con READ COMMITTED
+[ 10.11s] B: 1ª lectura: 422.68
+[ 10.11s] A: UPDATE +50 y COMMIT (autocommit)
+[ 10.11s] B: 2ª lectura: 472.68  -> CAMBIÓ (non-repeatable read)
+
+>> 40.2 Non-repeatable read con REPEATABLE READ
+[ 10.12s] B: 1ª lectura: 422.68
+[ 10.12s] A: UPDATE +50 y COMMIT (autocommit)
+[ 10.12s] B: 2ª lectura: 422.68  -> igual
+
+>> 40.3 Phantom read con READ COMMITTED
+[ 10.12s] B: cuenta reservas 2029 de la habitación: 0
+[ 10.12s] A: INSERT nueva reserva 2029 y COMMIT
+[ 10.12s] B: vuelve a contar: 1  -> APARECIÓ UN FANTASMA
+
+>> 40.3 Phantom read con REPEATABLE READ
+[ 10.12s] B: cuenta reservas 2029 de la habitación: 0
+[ 10.13s] A: INSERT nueva reserva 2029 y COMMIT
+[ 10.13s] B: vuelve a contar: 0  -> igual
+
+>> 40.4 REPEATABLE READ: actualización concurrente de la misma fila
+[ 10.13s] A: UPDATE +5 y COMMIT
+[ 10.13s] B: ERROR -> could not serialize access due to concurrent update
+
+>> 40.5 Write skew: regla 'un huésped no puede tener dos reservas pendientes que empiecen el mismo día'
+   -- REPEATABLE READ
+[ 10.14s] A: verifica: 0 pendientes -> inserta
+[ 10.14s] B: verifica: 0 pendientes -> inserta
+[ 10.14s] A: COMMIT ok
+[ 10.14s] B: COMMIT ok
+[ 10.14s] M: reservas pendientes del huésped ese día: 2 (regla violada)
+   -- SERIALIZABLE
+[ 10.14s] A: verifica: 0 pendientes -> inserta
+[ 10.15s] B: verifica: 0 pendientes -> inserta
+[ 10.15s] A: COMMIT ok
+[ 10.15s] B: COMMIT ERROR -> could not serialize access due to read/write dependencies among transactions
+[ 10.15s] M: reservas pendientes del huésped ese día: 1 (regla respetada)
+
+==============================================================================
+PUNTO 41 — Deadlock
+==============================================================================
+deadlock_timeout = 1s
+[ 10.16s] A: bloquea reserva 1000
+[ 10.16s] B: bloquea reserva 2000
+[ 10.16s] A: pide reserva 2000...
+        pg_stat_activity: ('A', 'Lock', 'transactionid', [1157], "UPDATE reserva SET observaciones = 'A' WHERE reserva_id = 20")
+        pg_stat_activity: ('B', 'Client', 'ClientRead', [], "UPDATE reserva SET observaciones = 'B' WHERE reserva_id = 20")
+        pg_locks: ('A', 'relation', 'reserva', 'RowExclusiveLock', True)
+        pg_locks: ('A', 'transactionid', '', 'ExclusiveLock', True)
+        pg_locks: ('A', 'tuple', 'reserva', 'ExclusiveLock', True)
+        pg_locks: ('A', 'transactionid', '', 'ShareLock', False)
+        pg_locks: ('B', 'relation', 'reserva', 'RowExclusiveLock', True)
+        pg_locks: ('B', 'transactionid', '', 'ExclusiveLock', True)
+[ 10.66s] B: pide reserva 1000... (ciclo: A espera a B y B espera a A)
+[ 11.16s] A: ERROR -> deadlock detected
+[ 11.16s] B: obtuvo
+pg_stat_database.deadlocks: 0 -> 1
+
+>> Prevención: ambos bloquean en el mismo orden (ORDER BY reserva_id ... FOR UPDATE)
+[ 11.16s] A: bloquea 1000 y 2000 en orden
+[ 11.16s] B: ejecuta  SELECT reserva_id FROM reserva WHERE reserva_id IN (1000,2000) ORDER B
+[ 12.16s] A: COMMIT
+[ 12.17s] B: terminó  -> [(1000,), (2000,)]
+
+==============================================================================
+PUNTO 42 — Diagnóstico: mensajes del log del servidor
+==============================================================================
+FIN

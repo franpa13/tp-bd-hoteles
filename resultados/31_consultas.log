@@ -1,0 +1,196 @@
+
+### 24.1 Fechas: reservas que comienzan hoy
+ tablas=1 | mediana 2.3 ms | filas 1507 | shared hit=1063
+ nodos: ['Index Scan  using ix_reserva_fecha_inicio  on reserva']
+ muestra: [(6988304, 2803, 17835, datetime.date(2026, 10, 25)), (6988544, 4552, 106114, datetime.date(2026, 10, 14)), (6988731, 6153, 445116, datetime.date(2026, 10, 17))]
+
+### 24.2 INNER JOIN: huéspedes que ingresan hoy con su habitación
+ tablas=3 | mediana 10.0 ms | filas 1507 | shared hit=7140
+ nodos: ['Sort', 'Sort', 'Sort', 'Hash Join', 'Nested Loop', 'Index Scan  using ix_reserva_fecha_inicio  on reserva']
+ muestra: [(7067702, 'Acosta', 'Alejandro', '108', datetime.date(2026, 10, 13)), (7144015, 'Acosta', 'Daniela', '317', datetime.date(2026, 10, 12)), (7168014, 'Acosta', 'Emiliano', '408', datetime.date(2026, 10, 13))]
+unknown PostgreSQL timezone: 'AMERICA0'; will use UTC
+
+### 24.3 LEFT JOIN: huéspedes registrados en 2026 que todavía no reservaron
+ tablas=2 | mediana 1420.4 ms | filas 50 | shared hit=12442 read=90751
+ nodos: ['Sort', 'Sort', 'Sort', 'Seq Scan  on reserva', 'Bitmap Heap Scan  on huesped', 'Bitmap Index Scan  on ix_huesped_fecha_registro']
+ muestra: [(566893, 'Díaz', 'Miguel', datetime.datetime(2026, 6, 18, 0, 21, 50, 751830, tzinfo=datetime.timezone.utc)), (192772, 'Núñez', 'Matías', datetime.datetime(2026, 6, 17, 22, 38, 28, 584703, tzinfo=datetime.timezone.utc)), (846997, 'Luna', 'Silvina', datetime.datetime(2026, 6, 16, 22, 46, 34, 213355, tzinfo=datetime.timezone.utc))]
+
+### 24.4 EXISTS: hoteles con alguna suite reservada para el próximo mes
+ tablas=3 | mediana 27.9 ms | filas 117 | shared hit=27775
+ nodos: ['Hash Join', 'HashAggregate', 'Hash Join', 'Index Scan  using ix_reserva_fecha_inicio  on reserva', 'Bitmap Heap Scan  on habitacion', 'Bitmap Index Scan  on ix_habitacion_tipo']
+ muestra: [(116, 'Hotel San Miguel de Tucumán 2'), (87, 'Hotel San Carlos de Bariloche 9'), (71, 'Hotel San Salvador de Jujuy 4')]
+
+### 24.5 CASE WHEN: clasificación de reservas de 2025 por duración
+ tablas=1 | mediana 325.2 ms | filas 4 | shared hit=386455
+ nodos: ['Sort', 'Sort', 'Sort', 'HashAggregate', 'Index Scan  using ix_reserva_fecha_inicio  on reserva']
+ muestra: [('1 noche', 121448), ('2 a 3 noches', 271146), ('4 a 7 noches', 181287)]
+
+### 24.6 GROUP BY + agregaciones: estadísticas por estado
+ tablas=2 | mediana 2183.5 ms | filas 5 | shared hit=9989 read=82014
+ nodos: ['Sort', 'Sort', 'Sort', 'HashAggregate', 'Hash Join', 'Seq Scan  on reserva']
+ muestra: [('Finalizada', 6116023, Decimal('3.41'), Decimal('208.13')), ('Cancelada', 753914, Decimal('3.40'), Decimal('209.96')), ('No-show', 284356, Decimal('3.42'), Decimal('207.76'))]
+
+### 24.7 ORDER BY + LIMIT: las 10 estadías más largas finalizadas
+ tablas=1 | mediana 1088.4 ms | filas 10 | shared hit=10180 read=81822
+ nodos: ['Sort', 'Sort', 'Sort', 'Seq Scan  on reserva']
+ muestra: [(7078173, 5254, datetime.date(2026, 10, 10), datetime.date(2026, 10, 24), 14), (7133276, 1336, datetime.date(2026, 10, 10), datetime.date(2026, 10, 24), 14), (7051882, 4031, datetime.date(2026, 10, 10), datetime.date(2026, 10, 24), 14)]
+
+### 24.8 Subconsulta escalar: reservas 2025 con tarifa mayor al promedio de su año
+ tablas=1 | mediana 651.7 ms | filas 1 | shared hit=772910
+ nodos: ['Index Scan  using ix_reserva_fecha_inicio  on reserva', 'Index Scan  using ix_reserva_fecha_inicio  on reserva']
+ muestra: [(217197,)]
+
+### 24.9 Subconsulta en FROM + HAVING: huéspedes con más de 25 reservas
+ tablas=2 | mediana 853.2 ms | filas 20 | shared hit=2413922 read=11383
+ nodos: ['Sort', 'Sort', 'Sort', 'Hash Join', 'Seq Scan  on huesped', 'GroupAggregate']
+ muestra: [(1, 'Torres', 'Jorge', 14054), (2, 'Rojas', 'Fernando', 5236), (3, 'González', 'Martín', 3844)]
+
+### 24.10 Funciones de ventana: ranking de hoteles por reservas en 2025 dentro de su provincia
+ tablas=6 | mediana 533.1 ms | filas 123 | shared hit=386513
+ nodos: ['Sort', 'Sort', 'Sort', 'Sort', 'Sort', 'Sort']
+ muestra: [('Buenos Aires', 'Hotel Mar del Plata 6', 9783, 1), ('Buenos Aires', 'Hotel Mar del Plata 8', 6504, 2), ('Buenos Aires', 'Hotel Mar del Plata 1', 6364, 3)]
+
+### 25.1 Disponibilidad: habitaciones dobles libres en Bariloche del 10 al 17/01/2027 (5 tablas)
+ tablas=6 | mediana 14.1 ms | filas 4 | shared hit=2101
+ nodos: ['Sort', 'Sort', 'Sort', 'Nested Loop', 'Hash Join', 'Nested Loop']
+ muestra: [('Hotel San Carlos de Bariloche 1', '102', 1, 'Doble'), ('Hotel San Carlos de Bariloche 1', '106', 1, 'Doble'), ('Hotel San Carlos de Bariloche 11', '106', 1, 'Doble')]
+
+### 25.2 Reservas por período: reservas confirmadas de diciembre 2026 con huésped y hotel (4 tablas)
+ tablas=4 | mediana 6.8 ms | filas 100 | shared hit=6337
+ nodos: ['Sort', 'Sort', 'Sort', 'Sort', 'Nested Loop', 'Nested Loop']
+ muestra: [(7261850, 'Hotel Buenos Aires 1', '111', 'Ruiz, Camila', datetime.date(2026, 12, 1), datetime.date(2026, 12, 2), Decimal('145.86')), (7259061, 'Hotel Buenos Aires 1', '113', 'Luna, Matías', datetime.date(2026, 12, 1), datetime.date(2026, 12, 3), Decimal('108.14')), (7155283, 'Hotel Buenos Aires 1', '115', 'Morales, Micaela', datetime.date(2026, 12, 1), datetime.date(2026, 12, 6), Decimal('122.59'))]
+
+### 25.3 Top 10 hoteles con más reservas finalizadas en 2025
+ tablas=3 | mediana 500.0 ms | filas 10 | shared hit=386507
+ nodos: ['Sort', 'Sort', 'Sort', 'HashAggregate', 'Hash Join', 'Hash Join']
+ muestra: [('Hotel San Carlos de Bariloche 9', 5, 10563), ('Hotel Mar del Plata 6', 5, 9783), ('Hotel Córdoba 4', 5, 9431)]
+
+### 25.4 Ocupación mensual 2025 por hotel (noches vendidas / noches disponibles)
+ tablas=6 | mediana 1605.4 ms | filas 1476 | shared hit=34224 read=80834
+ nodos: ['Sort', 'Sort', 'Sort', 'Nested Loop', 'Index Scan  using hotel_nombre_key  on hotel', 'Materialize']
+ muestra: [('Hotel Buenos Aires 1', datetime.date(2025, 1, 1), Decimal('89.2')), ('Hotel Buenos Aires 1', datetime.date(2025, 2, 1), Decimal('86.9')), ('Hotel Buenos Aires 1', datetime.date(2025, 3, 1), Decimal('69.0'))]
+
+### 25.5 Facturación anual por provincia y categoría (6 tablas)
+ tablas=7 | mediana 2197.6 ms | filas 126 | shared hit=1133988 read=26283
+ nodos: ['Sort', 'Sort', 'Sort', 'HashAggregate', 'Hash Join', 'Index Scan  using ix_reserva_fecha_inicio  on reserva']
+ muestra: [('Buenos Aires', 3, 2023, Decimal('2946400.03')), ('Buenos Aires', 3, 2024, Decimal('3074995.28')), ('Buenos Aires', 3, 2025, Decimal('3142671.11'))]
+
+### 25.6 Historial de un huésped con hotel, localidad y comodidades de la habitación (6 tablas)
+ tablas=8 | mediana 4.2 ms | filas 152 | shared hit=1227
+ nodos: ['Sort', 'Sort', 'Sort', 'GroupAggregate', 'Sort', 'Sort']
+ muestra: [(datetime.date(2027, 4, 19), datetime.date(2027, 4, 22), 'Confirmada', 'Hotel Puerto Iguazú 4', 'Puerto Iguazú', 'Aire acondicionado, Balcón, Bañera de hidromasaje, Cafetera, Caja fuerte, Calefacción, Escritorio, Minibar, Vista panorámica, Wi-Fi'), (datetime.date(2027, 4, 5), datetime.date(2027, 4, 7), 'Pendiente', 'Hotel Salta 8', 'Salta', 'Accesible silla de ruedas, Aire acondicionado, Balcón, Bañera de hidromasaje, Cafetera, Caja fuerte, Calefacción, Escritorio, Minibar, TV por cable, Vista panorámica, Wi-Fi'), (datetime.date(2027, 2, 25), datetime.date(2027, 2, 26), 'Pendiente', 'Hotel San Rafael 2', 'San Rafael', 'Accesible silla de ruedas, Aire acondicionado, Balcón, Bañera de hidromasaje, Cafetera, Caja fuerte, Calefacción, Escritorio, Minibar, TV por cable, Vista panorámica, Wi-Fi')]
+
+### 25.7 Huéspedes frecuentes: más de 5 provincias distintas visitadas (5 tablas)
+ tablas=6 | mediana 1335.4 ms | filas 20 | shared hit=10 read=103300, temp read=7492 written=7498
+ nodos: ['Sort', 'Sort', 'Sort', 'GroupAggregate', 'Sort', 'Sort']
+ muestra: [(1, 'Torres', 'Jorge', 15, 11422), (2, 'Rojas', 'Fernando', 15, 4282), (3, 'González', 'Martín', 15, 3134)]
+
+### 25.8 Puntos de interés a menos de 2 km de hoteles 5 estrellas, con tipo (4 tablas)
+ tablas=4 | mediana 0.9 ms | filas 3 | shared hit=13
+ nodos: ['Sort', 'Sort', 'Sort', 'Hash Join', 'Nested Loop', 'Hash Join']
+ muestra: [('Hotel Córdoba 2', 'Playa', 'Playa de Córdoba 4', 1608), ('Hotel Córdoba 4', 'Mirador', 'Mirador de Córdoba 2', 467), ('Hotel San Carlos de Bariloche 1', 'Centro comercial', 'Shopping de San Carlos de Bariloche 1', 404)]
+
+### 25.9 Tasa de cancelación y no-show por hotel en 2025
+ tablas=3 | mediana 485.3 ms | filas 10 | shared hit=386507
+ nodos: ['Sort', 'Sort', 'Sort', 'HashAggregate', 'Hash Join', 'Hash Join']
+ muestra: [('Hotel Buenos Aires 2', 1130, Decimal('11.86'), Decimal('4.25')), ('Hotel Mendoza 6', 1957, Decimal('11.70'), Decimal('4.04')), ('Hotel San Carlos de Bariloche 6', 2018, Decimal('11.35'), Decimal('3.91'))]
+
+### 25.10 Anticipación promedio de reserva por temporada (análisis temporal)
+ tablas=2 | mediana 1087.8 ms | filas 3 | shared hit=757068 read=16933
+ nodos: ['Sort', 'Sort', 'Sort', 'HashAggregate', 'Index Scan  using ix_reserva_fecha_inicio  on reserva']
+ muestra: [('baja', Decimal('40.5'), 508378), ('alta', Decimal('40.4'), 390341), ('media', Decimal('40.3'), 309793)]
+
+### 25.11 Evolución interanual de reservas por mes con variación (LAG)
+ tablas=2 | mediana 751.4 ms | filas 48 | shared hit=2356
+ nodos: ['Sort', 'Sort', 'Sort', 'HashAggregate', 'Index Only Scan  using ix_reserva_fecha_inicio  on reserva']
+ muestra: [(2022, 1, 67048, None), (2023, 1, 67057, Decimal('0.0')), (2024, 1, 66986, Decimal('-0.1'))]
+
+### 25.12 Ingreso por tipo de habitación y comparación con la tarifa de lista (5 tablas)
+ tablas=5 | mediana 1497.8 ms | filas 24 | shared hit=397716
+ nodos: ['Sort', 'Sort', 'Sort', 'HashAggregate', 'Hash Join', 'Hash Join']
+ muestra: [('Cuádruple', 2, Decimal('106.08'), Decimal('94.25'), Decimal('12.6')), ('Doble', 2, Decimal('72.88'), Decimal('65.00'), Decimal('12.1')), ('Familiar', 2, Decimal('123.95'), Decimal('110.50'), Decimal('12.2'))]
+
+### 25.13 Huéspedes extranjeros por país de origen y destino preferido (6 tablas)
+ tablas=7 | mediana 847.3 ms | filas 189 | shared hit=386641 read=11351, temp read=4981 written=4981
+ nodos: ['Sort', 'Sort', 'Sort', 'Sort', 'Sort', 'Sort']
+ muestra: [('Alemania', 'Buenos Aires', 1522, 1), ('Alemania', 'San Carlos de Bariloche', 821, 2), ('Alemania', 'Córdoba', 742, 3)]
+
+### 25.14 Habitaciones sin ninguna reserva en los últimos 90 días (posibles fuera de servicio)
+ tablas=3 | mediana 80.9 ms | filas 0 | shared hit=90294
+ nodos: ['Sort', 'Sort', 'Sort', 'Nested Loop', 'Index Scan  using hotel_nombre_key  on hotel', 'Materialize']
+ muestra: []
+
+### 25.15 Huéspedes en casa hoy: check-out mañana con teléfono principal (4 tablas)
+ tablas=5 | mediana 798.6 ms | filas 1298 | shared hit=24435 read=81848
+ nodos: ['Sort', 'Sort', 'Sort', 'Hash Join', 'Nested Loop', 'Nested Loop']
+ muestra: [('Hotel Buenos Aires 1', '101', 'Rodríguez', 'Lucía', '+54 9 175 4251724'), ('Hotel Buenos Aires 1', '105', 'Cabrera', 'Camila', '+54 9 76 4014505'), ('Hotel Buenos Aires 1', '112', 'Aguirre', 'Pablo', '+54 9 375 4002264')]
+
+### 26.1 ¿Está libre la habitación 1234 del 10 al 15/07/2026? (comparación explícita)
+ tablas=1 | mediana 0.8 ms | filas 1 | shared hit=205
+ nodos: ['Index Scan  using ex_reserva_superpuesta  on reserva']
+ muestra: [(False,)]
+
+### 26.2 Misma pregunta con rangos (usa el índice GiST de la restricción)
+ tablas=1 | mediana 0.5 ms | filas 1 | shared hit=6
+ nodos: ['Index Scan  using ex_reserva_superpuesta  on reserva']
+ muestra: [(False,)]
+
+### 26.3 Versión errónea (sólo mira si la llegada cae dentro de otra reserva)
+ tablas=1 | mediana 0.4 ms | filas 1 | shared hit=207
+ nodos: ['Index Scan  using ex_reserva_superpuesta  on reserva']
+ muestra: [(False,)]
+
+### 26.4 Cantidad de habitaciones libres por tipo en un hotel para un período
+ tablas=3 | mediana 1.4 ms | filas 2 | shared hit=186
+ nodos: ['GroupAggregate', 'Sort', 'Sort', 'Sort', 'Nested Loop', 'Nested Loop']
+ muestra: [('Suite', 1), ('Triple', 1)]
+
+### 27.1 Reservas futuras (desde hoy) por estado
+ tablas=1 | mediana 208.3 ms | filas 3 | shared hit=258981
+ nodos: ['HashAggregate', 'Index Scan  using ix_reserva_fecha_inicio  on reserva']
+ muestra: [('C', 232557), ('X', 42192), ('P', 148730)]
+
+### 27.2 Históricas por año
+ tablas=2 | mediana 1319.4 ms | filas 12 | shared hit=6703
+ nodos: ['Sort', 'Sort', 'Sort', 'HashAggregate', 'Index Only Scan  using ix_reserva_fecha_inicio  on reserva']
+ muestra: [(2015, 603241), (2016, 605005), (2017, 602498)]
+
+### 27.3 Por mes de 2025 (agrupando con date_trunc)
+ tablas=1 | mediana 144.9 ms | filas 12 | shared hit=533
+ nodos: ['Sort', 'Sort', 'Sort', 'HashAggregate', 'Index Only Scan  using ix_reserva_fecha_inicio  on reserva']
+ muestra: [(datetime.date(2025, 1, 1), 67202), (datetime.date(2025, 2, 1), 62027), (datetime.date(2025, 3, 1), 53453)]
+
+### 27.4 Estadías que se solapan con un rango (no sólo las que empiezan en él)
+ tablas=1 | mediana 537.0 ms | filas 1 | shared hit=6707 read=85295
+ nodos: ['Seq Scan  on reserva']
+ muestra: [(58632,)]
+
+### 27.5a Filtro de año con EXTRACT (no SARGable)
+ tablas=2 | mediana 808.7 ms | filas 1 | shared hit=7075
+ nodos: ['Index Only Scan  using ix_reserva_fecha_inicio  on reserva']
+ muestra: [(604593,)]
+
+### 27.5b Filtro de año con rango semiabierto (SARGable)
+ tablas=1 | mediana 25.3 ms | filas 1 | shared hit=572
+ nodos: ['Index Only Scan  using ix_reserva_fecha_inicio  on reserva']
+ muestra: [(604593,)]
+
+### 27.5c Filtro de año con BETWEEN
+ tablas=1 | mediana 25.0 ms | filas 1 | shared hit=572
+ nodos: ['Index Only Scan  using ix_reserva_fecha_inicio  on reserva']
+ muestra: [(604593,)]
+
+### 27.5d Filtro con to_char (no SARGable, además compara texto)
+ tablas=1 | mediana 1415.7 ms | filas 1 | shared hit=7075
+ nodos: ['Index Only Scan  using ix_reserva_fecha_inicio  on reserva']
+ muestra: [(604593,)]
+
+### 27.6a Mes con date_trunc sobre la columna
+ tablas=1 | mediana 1076.7 ms | filas 1 | shared hit=7075
+ nodos: ['Index Only Scan  using ix_reserva_fecha_inicio  on reserva']
+ muestra: [(64985,)]
+
+### 27.6b Mes con rango
+ tablas=1 | mediana 2.8 ms | filas 1 | shared hit=60
+ nodos: ['Index Only Scan  using ix_reserva_fecha_inicio  on reserva']
+ muestra: [(64985,)]

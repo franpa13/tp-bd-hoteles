@@ -1,0 +1,189 @@
+
+==============================================================================
+PUNTO 50 — Tabla particionada por año de fecha_inicio vs tabla sin particionar
+==============================================================================
+>> Intento de crear la restricción EXCLUDE sobre la tabla particionada:
+   ERROR: exclusion constraints are not supported on partitioned tables
+>> PRIMARY KEY (reserva_id) sin la clave de partición -> ERROR: unique constraint on partitioned table must include all partitioning columns
+>> PRIMARY KEY (reserva_id, fecha_inicio): aceptada
+carga de 7,535,580 filas: 19 s
+índices (se crean en cada partición): 6 s
+
+Tamaño por partición:
+    ('reserva_p2015', '62 MB', '38 MB', 603241)
+    ('reserva_p2016', '62 MB', '34 MB', 605005)
+    ('reserva_p2017', '62 MB', '38 MB', 602498)
+    ('reserva_p2018', '62 MB', '39 MB', 602992)
+    ('reserva_p2019', '62 MB', '41 MB', 602138)
+    ('reserva_p2020', '62 MB', '37 MB', 604906)
+    ('reserva_p2021', '62 MB', '35 MB', 602764)
+    ('reserva_p2022', '62 MB', '36 MB', 602740)
+    ('reserva_p2023', '62 MB', '37 MB', 603475)
+    ('reserva_p2024', '62 MB', '36 MB', 604593)
+    ('reserva_p2025', '62 MB', '47 MB', 603919)
+    ('reserva_p2026', '61 MB', '46 MB', 599638)
+    ('reserva_p2027', '29 MB', '24 MB', 297671)
+    ('reserva_pdef', '0 bytes', '24 kB', 0)
+total particionada: 1262 MB | sin particionar: 2037 MB
+Un mes (filtra por la clave)         reserva             8.6 ms | shared hit=378
+Un mes (filtra por la clave)         reserva_part       36.7 ms | shared hit=39343
+Un año completo                      reserva            63.5 ms | shared hit=3535
+Un año completo                      reserva_part       95.6 ms | shared hit=3280 read=4692
+Por huésped (no usa la clave)        reserva             0.6 ms | shared hit=11
+Por huésped (no usa la clave)        reserva_part        0.5 ms | shared hit=52
+Toda la tabla                        reserva           339.5 ms | shared hit=13474
+Toda la tabla                        reserva_part      346.3 ms | shared hit=6639
+unknown PostgreSQL timezone: 'AMERICA0'; will use UTC
+Por PK reserva_id (no usa la clave)  reserva             0.6 ms | shared hit=4
+Por PK reserva_id (no usa la clave)  reserva_part        1.0 ms | shared hit=40
+
+>> Mantenimiento: eliminar todo 2015
+   DELETE en tabla sin particionar: 603,241 filas en 0.7 s (deja tuplas muertas; se revierte)
+   DETACH + DROP de la partición 2015: 14 ms (se revierte)
+
+==============================================================================
+PUNTO 51 — Partition pruning
+==============================================================================
+
+--- Rango sobre la clave
+   particiones visitadas: 1 ['reserva_p2024'] | subplanes eliminados en ejecución: [] | 6.791 ms
+
+--- Igualdad sobre la clave
+   particiones visitadas: 1 ['reserva_p2026'] | subplanes eliminados en ejecución: [] | 0.281 ms
+
+--- Función sobre la clave (EXTRACT)
+   particiones visitadas: 14 ['reserva_p2015', 'reserva_p2016', 'reserva_p2017', 'reserva_p2018']... | subplanes eliminados en ejecución: [] | 854.258 ms
+
+--- Filtro sobre otra columna (fecha_fin)
+   particiones visitadas: 14 ['reserva_p2015', 'reserva_p2016', 'reserva_p2017', 'reserva_p2018']... | subplanes eliminados en ejecución: [] | 589.184 ms
+
+--- Clave comparada con expresión estable (CURRENT_DATE)
+   particiones visitadas: 3 ['reserva_p2026', 'reserva_p2027', 'reserva_pdef'] | subplanes eliminados en ejecución: ['11'] | 90.528 ms
+
+--- Plan completo, rango sobre la clave:
+Aggregate  (cost=1712.00..1712.01 rows=1 width=8) (actual time=7.809..7.811 rows=1 loops=1)
+  Buffers: shared hit=61
+  ->  Index Only Scan using reserva_p2024_fecha_inicio_idx on reserva_p2024 reserva_part  (cost=0.42..1548.05 rows=65581 width=0) (actual time=0.023..4.571 rows=64985 loops=1)
+        Index Cond: ((fecha_inicio >= '2024-07-01'::date) AND (fecha_inicio < '2024-08-01'::date))
+        Heap Fetches: 0
+        Buffers: shared hit=61
+Planning Time: 0.172 ms
+Execution Time: 7.840 ms
+
+--- Sentencia preparada con parámetro (pruning en tiempo de ejecución):
+Aggregate  (cost=1193.67..1193.68 rows=1 width=8) (actual time=13.170..13.173 rows=1 loops=1)
+  Buffers: shared hit=61
+  ->  Append  (cost=0.42..1099.48 rows=37679 width=0) (actual time=0.017..9.893 rows=64985 loops=1)
+        Buffers: shared hit=61
+        Subplans Removed: 13
+        ->  Index Only Scan using reserva_p2024_fecha_inicio_idx on reserva_p2024 reserva_part_1  (cost=0.42..72.89 rows=3023 width=0) (actual time=0.017..5.198 rows=64985 loops=1)
+              Index Cond: ((fecha_inicio >= $1) AND (fecha_inicio < $2))
+              Heap Fetches: 0
+              Buffers: shared hit=61
+Planning:
+  Buffers: shared hit=3
+Planning Time: 0.581 ms
+Execution Time: 13.284 ms
+
+--- Con enable_partition_pruning = off: particiones visitadas 0 | 12.432 ms
+
+==============================================================================
+PUNTO 52 — Vistas y vistas materializadas
+==============================================================================
+Vista v_reserva_detalle creada (8 tablas)
+
+--- Consulta simple sobre la vista de 8 tablas (PostgreSQL no elimina INNER JOIN innecesarios)
+mediana 1.47 ms | filas 1 | shared hit=23
+nodos: ['Nested Loop', 'Nested Loop', 'Nested Loop', 'Nested Loop', 'Merge Join', 'Index Scan  using domicilio_pkey  on domicilio']
+Nested Loop  (cost=18.18..30.97 rows=1 width=32) (actual time=0.056..0.059 rows=1 loops=1)
+  Buffers: shared hit=23
+  ->  Nested Loop  (cost=17.76..22.53 rows=1 width=33) (actual time=0.052..0.054 rows=1 loops=1)
+        Buffers: shared hit=19
+        ->  Nested Loop  (cost=17.62..21.73 rows=1 width=35) (actual time=0.050..0.053 rows=1 loops=1)
+              Buffers: shared hit=17
+              ->  Nested Loop  (cost=17.48..21.57 rows=1 width=37) (actual time=0.049..0.051 rows=1 loops=1)
+                    Buffers: shared hit=15
+                    ->  Merge Join  (cost=17.35..21.41 rows=1 width=39) (actual time=0.047..0.048 rows=1 loops=1)
+                          Merge Cond: (d.domicilio_id = h.domicilio_id)
+                          Buffers: shared hit=13
+                          ->  Index Scan using domicilio_pkey on domicilio d  (cost=0.42..33000.27 rows=1000123 width=12) (actual time=0.007..0.019 rows=123 loops=1)
+                                Buffers: shared hit=4
+                          ->  Sort  (cost=16.93..16.93 rows=1 width=43) (actual time=0.017..0.018 rows=1 loops=1)
+                                Sort Key: h.domicilio_id
+                                Sort Method: quicksort  Memory: 25kB
+                                Buffers: shared hit=9
+                                ->  Nested Loop  (cost=0.86..16.92 rows=1 width=43) (actual time=0.011..0.013 rows=1 loops=1)
+                                      Buffers: shared hit=9
+                                      ->  Nested Loop  (cost=0.71..16.75 rows=1 width=18) (actual time=0.009..0.010 rows=1 loops=1)
+                                            Buffers: shared hit=7
+                                            ->  Index Scan using reserva_pkey on reserva r  (cost=0.43..8.45 rows=1 width=16) (actual time=0.005..0.005 rows=1 loops=1)
+                                                  Index Cond: (reserva_id = 4000000)
+                                                  Buffers: shared hit=4
+                                            ->  Index Scan using uq_habitacion_hotel on habitacion hb  (cost=0.28..8.30 rows=1 width=10) (actual time=0.002..0.002 rows=1 loops=1)
+                                                  Index Cond: (habitacion_id = r.habitacion_id)
+                                                  Buffers: shared hit=3
+                                      ->  Index Scan using hotel_pkey on hotel h  (cost=0.14..0.16 rows=1 width=33) (actual time=0.001..0.002 rows=1 loops=1)
+                                            Index Cond: (hotel_id = hb.hotel_id)
+                                            Buffers: shared hit=2
+                    ->  Index Only Scan using tipo_habitacion_pkey on tipo_habitacion th  (cost=0.13..0.15 rows=1 width=2) (actual time=0.002..0.002 rows=1 loops=1)
+                          Index Cond: (tipo_habitacion_id = hb.tipo_habitacion_id)
+                          Heap Fetches: 1
+                          Buffers: shared hit=2
+              ->  Index Scan using localidad_pkey on localidad l  (cost=0.14..0.16 rows=1 width=6) (actual time=0.001..0.001 rows=1 loops=1)
+                    Index Cond: (localidad_id = d.localidad_id)
+                    Buffers: shared hit=2
+        ->  Index Only Scan using provincia_pkey on provincia p  (cost=0.14..0.72 rows=1 width=2) (actual time=0.001..0.001 rows=1 loops=1)
+              Index Cond: (provincia_id = l.provincia_id)
+              Heap Fetches: 1
+              Buffers: shared hit=2
+  ->  Index Scan using huesped_pkey on huesped hu  (cost=0.42..8.44 rows=1 width=15) (actual time=0.004..0.004 rows=1 loops=1)
+        Index Cond: (huesped_id = r.huesped_id)
+        Buffers: shared hit=4
+Planning:
+  Buffers: shared hit=58
+Planning Time: 0.949 ms
+Execution Time: 0.101 ms
+CREATE MATERIALIZED VIEW: 6.3 s | filas 18,450 | tamaño 1536 kB
+
+--- Top 10 hoteles por ingresos 2025 — sobre las tablas
+mediana 388.66 ms | filas 10 | shared hit=11198
+nodos: ['Sort', 'Sort', 'Sort', 'HashAggregate', 'Hash Join', 'Hash Join']
+
+--- Top 10 hoteles por ingresos 2025 — sobre la vista materializada
+mediana 2.25 ms | filas 10 | shared hit=195
+nodos: ['Sort', 'Sort', 'Sort', 'HashAggregate', 'Hash Join', 'Seq Scan  on mv_ocupacion_mensual']
+Limit  (cost=490.33..490.35 rows=10 width=53) (actual time=1.513..1.516 rows=10 loops=1)
+  Buffers: shared hit=195
+  ->  Sort  (cost=490.33..490.64 rows=123 width=53) (actual time=1.512..1.514 rows=10 loops=1)
+        Sort Key: (sum(m.ingresos)) DESC
+        Sort Method: top-N heapsort  Memory: 26kB
+        Buffers: shared hit=195
+        ->  HashAggregate  (cost=486.13..487.67 rows=123 width=53) (actual time=1.445..1.468 rows=123 loops=1)
+              Group Key: h.nombre
+              Batches: 1  Memory Usage: 96kB
+              Buffers: shared hit=195
+              ->  Hash Join  (cost=5.77..478.60 rows=1506 width=29) (actual time=0.036..1.102 rows=1476 loops=1)
+                    Hash Cond: (m.hotel_id = h.hotel_id)
+                    Buffers: shared hit=195
+                    ->  Seq Scan on mv_ocupacion_mensual m  (cost=0.00..468.75 rows=1506 width=12) (actual time=0.005..0.881 rows=1476 loops=1)
+                          Filter: ((mes >= '2025-01-01'::date) AND (mes < '2026-01-01'::date))
+                          Rows Removed by Filter: 16974
+                          Buffers: shared hit=192
+                    ->  Hash  (cost=4.23..4.23 rows=123 width=25) (actual time=0.028..0.029 rows=123 loops=1)
+                          Buckets: 1024  Batches: 1  Memory Usage: 16kB
+                          Buffers: shared hit=3
+                          ->  Seq Scan on hotel h  (cost=0.00..4.23 rows=123 width=25) (actual time=0.001..0.012 rows=123 loops=1)
+                                Buffers: shared hit=3
+Planning:
+  Buffers: shared hit=10
+Planning Time: 0.147 ms
+Execution Time: 1.541 ms
+¿mismo resultado? True
+
+>> Desactualización: se confirma una reserva nueva y la vista materializada no la ve
+   reservas hotel 13 marzo 2029 en la vista: None -> sigue igual: None
+   REFRESH: 6.2 s (bloquea lecturas de la vista mientras corre)
+   REFRESH CONCURRENTLY: 6.0 s (no bloquea lecturas; requiere índice UNIQUE)
+   después del REFRESH: (1,)
+
+FIN

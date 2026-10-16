@@ -1,0 +1,179 @@
+
+==============================================================================
+OPTIMIZACIÓN 7 — Huéspedes sin reservas desde 2025: NOT IN → NOT EXISTS
+==============================================================================
+--- ORIGINAL: plan estimado (sin ejecutar)
+Aggregate  (cost=151507818979.00..151507818979.01 rows=1 width=8)
+  ->  Seq Scan on huesped  (cost=0.00..151507817729.00 rows=500000 width=0)
+        Filter: (NOT (SubPlan 1))
+        SubPlan 1
+          ->  Materialize  (cost=0.00..299277.03 rows=1495425 width=8)
+                ->  Seq Scan on reserva  (cost=0.00..285957.90 rows=1495425 width=8)
+                      Filter: (fecha_inicio >= '2025-01-01'::date)
+JIT:
+  Functions: 10
+  Options: Inlining true, Optimization true, Expressions true, Deforming true
+ORIGINAL cancelada tras 300 s: canceling statement due to statement timeout
+--- ORIGINAL con work_mem = 64MB (la subconsulta entra en memoria como hashed SubPlan)
+
+--- NOT IN con work_mem 64MB
+mediana 1557.68 ms | filas 1 | shared hit=1 read=36492
+nodos: ['Seq Scan  on huesped', 'Bitmap Heap Scan  on reserva', 'Bitmap Index Scan  on ix_reserva_fecha_inicio']
+Aggregate  (cost=263862.35..263862.36 rows=1 width=8) (actual time=1629.247..1629.251 rows=1 loops=1)
+  Buffers: shared hit=1 read=36492
+  ->  Seq Scan on huesped  (cost=238633.35..262612.35 rows=500000 width=0) (actual time=1045.779..1610.729 rows=329293 loops=1)
+        Filter: (NOT (hashed SubPlan 1))
+        Rows Removed by Filter: 670707
+        Buffers: shared hit=1 read=36492
+        SubPlan 1
+          ->  Bitmap Heap Scan on reserva  (cost=24961.98..234894.79 rows=1495425 width=8) (actual time=51.141..273.891 rows=1501228 loops=1)
+                Recheck Cond: (fecha_inicio >= '2025-01-01'::date)
+                Heap Blocks: exact=22345
+                Buffers: shared read=25014
+                ->  Bitmap Index Scan on ix_reserva_fecha_inicio  (cost=0.00..24588.12 rows=1495425 width=0) (actual time=47.465..47.466 rows=1501228 loops=1)
+                      Index Cond: (fecha_inicio >= '2025-01-01'::date)
+                      Buffers: shared read=2669
+Planning Time: 0.163 ms
+JIT:
+  Functions: 19
+  Options: Inlining false, Optimization false, Expressions true, Deforming true
+  Timing: Generation 1.112 ms, Inlining 0.000 ms, Optimization 0.607 ms, Emission 7.937 ms, Total 9.657 ms
+Execution Time: 1633.955 ms
+
+--- OPTIMIZADA (NOT EXISTS → Hash Anti Join)
+mediana 582.06 ms | filas 1 | shared hit=836108 read=60284
+nodos: ['Index Only Scan  using huesped_pkey  on huesped', 'Index Only Scan  using ix_reserva_huesped_fecha  on reserva']
+Aggregate  (cost=351986.57..351986.58 rows=1 width=8) (actual time=800.272..800.275 rows=1 loops=1)
+  Buffers: shared hit=836108 read=60284
+  ->  Merge Anti Join  (cost=1148.06..350278.66 rows=683165 width=0) (actual time=83.613..782.099 rows=329293 loops=1)
+        Merge Cond: (h.huesped_id = r.huesped_id)
+        Buffers: shared hit=836108 read=60284
+        ->  Index Only Scan using huesped_pkey on huesped h  (cost=0.42..25980.42 rows=1000000 width=8) (actual time=0.011..93.956 rows=1000000 loops=1)
+              Heap Fetches: 0
+              Buffers: shared hit=4 read=2732
+        ->  Index Only Scan using ix_reserva_huesped_fecha on reserva r  (cost=0.43..303105.42 rows=1495425 width=8) (actual time=0.029..498.639 rows=1501228 loops=1)
+              Index Cond: (fecha_inicio >= '2025-01-01'::date)
+              Heap Fetches: 155
+              Buffers: shared hit=836104 read=57552
+Planning:
+  Buffers: shared hit=7 read=9
+Planning Time: 0.343 ms
+JIT:
+  Functions: 6
+  Options: Inlining false, Optimization false, Expressions true, Deforming true
+  Timing: Generation 0.351 ms, Inlining 0.000 ms, Optimization 0.155 ms, Emission 6.132 ms, Total 6.638 ms
+Execution Time: 800.754 ms
+>> 300035.6 ms -> 582.1 ms  (x515.5)
+
+==============================================================================
+OPTIMIZACIÓN 8 — Reservas 2025 por hotel: subconsulta correlacionada → JOIN agregado
+==============================================================================
+
+--- ORIGINAL
+mediana 9347.34 ms | filas 10 | shared hit=1505583
+nodos: ['Sort', 'Sort', 'Sort', 'Seq Scan  on hotel', 'Hash Join', 'Bitmap Heap Scan  on reserva']
+Limit  (cost=36875120.33..36875120.35 rows=10 width=29) (actual time=15111.428..15111.437 rows=10 loops=1)
+  Buffers: shared hit=1505583
+  ->  Sort  (cost=36875120.33..36875120.63 rows=123 width=29) (actual time=15043.833..15043.840 rows=10 loops=1)
+        Sort Key: ((SubPlan 1)) DESC
+        Sort Method: top-N heapsort  Memory: 26kB
+        Buffers: shared hit=1505583
+        ->  Seq Scan on hotel h  (cost=0.00..36875117.67 rows=123 width=29) (actual time=117.512..15043.189 rows=123 loops=1)
+              Buffers: shared hit=1505583
+              SubPlan 1
+                ->  Aggregate  (cost=299797.66..299797.67 rows=1 width=8) (actual time=122.286..122.286 rows=1 loops=123)
+                      Buffers: shared hit=1505580
+                      ->  Hash Join  (cost=11312.54..299785.80 rows=4744 width=0) (actual time=19.464..121.926 rows=4910 loops=123)
+                            Hash Cond: (r.habitacion_id = hb.habitacion_id)
+                            Buffers: shared hit=1505580
+                            ->  Bitmap Heap Scan on reserva r  (cost=11254.62..298187.83 rows=586360 width=4) (actual time=19.175..82.870 rows=603919 loops=123)
+                                  Recheck Cond: ((fecha_inicio >= '2025-01-01'::date) AND (fecha_inicio < '2026-01-01'::date))
+                                  Heap Blocks: exact=1370220
+                                  Buffers: shared hit=1505151
+                                  ->  Bitmap Index Scan on ix_reserva_fecha_inicio  (cost=0.00..11108.03 rows=586360 width=0) (actual time=17.653..17.653 rows=603919 loops=123)
+                                        Index Cond: ((fecha_inicio >= '2025-01-01'::date) AND (fecha_inicio < '2026-01-01'::date))
+                                        Buffers: shared hit=134931
+                            ->  Hash  (cost=57.15..57.15 rows=62 width=4) (actual time=0.055..0.055 rows=62 loops=123)
+                                  Buckets: 1024  Batches: 1  Memory Usage: 14kB
+                                  Buffers: shared hit=429
+                                  ->  Bitmap Heap Scan on habitacion hb  (cost=4.76..57.15 rows=62 width=4) (actual time=0.036..0.040 rows=62 loops=123)
+                                        Recheck Cond: (hotel_id = h.hotel_id)
+                                        Heap Blocks: exact=171
+                                        Buffers: shared hit=429
+                                        ->  Bitmap Index Scan on uq_habitacion_numero  (cost=0.00..4.75 rows=62 width=0) (actual time=0.029..0.029 rows=62 loops=123)
+                                              Index Cond: (hotel_id = h.hotel_id)
+                                              Buffers: shared hit=258
+Planning:
+  Buffers: shared hit=6
+Planning Time: 0.299 ms
+JIT:
+  Functions: 21
+  Options: Inlining true, Optimization true, Expressions true, Deforming true
+  Timing: Generation 0.898 ms, Inlining 6.495 ms, Optimization 33.236 ms, Emission 27.970 ms, Total 68.600 ms
+Execution Time: 15112.509 ms
+
+--- OPTIMIZADA
+mediana 51.78 ms | filas 10 | shared hit=25097
+nodos: ['Sort', 'Sort', 'Sort', 'GroupAggregate', 'Nested Loop', 'Index Scan  using hotel_pkey  on hotel']
+Limit  (cost=26792.96..26792.98 rows=10 width=33) (actual time=142.993..142.997 rows=10 loops=1)
+  Buffers: shared hit=25097
+  ->  Sort  (cost=26792.96..26793.26 rows=123 width=33) (actual time=142.991..142.993 rows=10 loops=1)
+        Sort Key: (count(*)) DESC
+        Sort Method: top-N heapsort  Memory: 26kB
+        Buffers: shared hit=25097
+        ->  GroupAggregate  (cost=0.57..26790.30 rows=123 width=33) (actual time=0.854..142.857 rows=123 loops=1)
+              Group Key: h.hotel_id
+              Buffers: shared hit=25097
+              ->  Nested Loop  (cost=0.57..23857.27 rows=586360 width=25) (actual time=0.013..101.280 rows=603919 loops=1)
+                    Buffers: shared hit=25097
+                    ->  Index Scan using hotel_pkey on hotel h  (cost=0.14..15.99 rows=123 width=25) (actual time=0.002..0.110 rows=123 loops=1)
+                          Buffers: shared hit=4
+                    ->  Index Only Scan using ix_reserva_hotel_fecha on reserva r  (cost=0.43..146.16 rows=4767 width=4) (actual time=0.009..0.384 rows=4910 loops=123)
+                          Index Cond: ((hotel_id = h.hotel_id) AND (fecha_inicio >= '2025-01-01'::date) AND (fecha_inicio < '2026-01-01'::date))
+                          Heap Fetches: 76
+                          Buffers: shared hit=25093
+Planning:
+  Buffers: shared hit=12
+Planning Time: 0.309 ms
+Execution Time: 143.035 ms
+>> 9347.3 ms -> 51.8 ms  (x180.5)
+¿mismo resultado? True
+
+==============================================================================
+PUNTO 37 — Validación y efectos secundarios
+==============================================================================
+[costo INSERT 20.000 reservas — con los índices agregados por la optimización] 1856 ms
+   ('ex_reserva_superpuesta', '625 MB')
+   ('ix_reserva_fact_cov', '598 MB')
+   ('ix_reserva_huesped_fecha', '452 MB')
+   ('reserva_pkey', '324 MB')
+   ('ix_reserva_fecha_inicio', '132 MB')
+   ('ix_reserva_hotel_fecha', '115 MB')
+tabla reserva: 1494 MB | total índices: 2246 MB
+tuplas muertas tras el UPDATE de hotel_id: (7577432, 20000)
+
+--- Consulta por FK huesped_id (ahora resuelta por el índice compuesto)
+mediana 0.32 ms | filas 1 | shared hit=13
+nodos: ['Index Only Scan  using ix_reserva_huesped_fecha  on reserva']
+Aggregate  (cost=8.91..8.92 rows=1 width=8) (actual time=0.036..0.036 rows=1 loops=1)
+  Buffers: shared hit=13
+  ->  Index Only Scan using ix_reserva_huesped_fecha on reserva  (cost=0.43..8.85 rows=24 width=0) (actual time=0.007..0.025 rows=162 loops=1)
+        Index Cond: (huesped_id = 777)
+        Heap Fetches: 0
+        Buffers: shared hit=13
+Planning Time: 0.035 ms
+Execution Time: 0.052 ms
+
+--- Consulta por año que antes usaba ix_reserva_fecha_inicio (¿cambió el plan?)
+mediana 8.57 ms | filas 1 | shared hit=439
+nodos: ['Index Only Scan  using ix_reserva_fact_cov  on reserva']
+Aggregate  (cost=3245.88..3245.89 rows=1 width=40) (actual time=11.486..11.488 rows=1 loops=1)
+  Buffers: shared hit=439
+  ->  Index Only Scan using ix_reserva_fact_cov on reserva  (cost=0.56..2998.42 rows=49493 width=6) (actual time=0.020..6.262 rows=64985 loops=1)
+        Index Cond: ((fecha_inicio >= '2024-07-01'::date) AND (fecha_inicio < '2024-08-01'::date))
+        Heap Fetches: 0
+        Buffers: shared hit=439
+Planning Time: 0.122 ms
+Execution Time: 11.514 ms
+
+FIN

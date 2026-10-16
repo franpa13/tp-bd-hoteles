@@ -1,0 +1,20 @@
+
+### 26.1 ¿Está libre la habitación 1234 del 2 al 6/07/2026? (comparación explícita)
+ tablas=1 | mediana 0.3 ms | filas 1 | shared hit=207
+ nodos: ['Index Scan  using ex_reserva_superpuesta  on reserva']
+ muestra: [(False,)]
+
+### 26.2 Misma pregunta con rangos (usa el índice GiST de la restricción)
+ tablas=1 | mediana 0.1 ms | filas 1 | shared hit=6
+ nodos: ['Index Scan  using ex_reserva_superpuesta  on reserva']
+ muestra: [(False,)]
+
+### 26.3 Versión errónea (sólo mira si la llegada cae dentro de otra reserva)
+ tablas=1 | mediana 0.8 ms | filas 1 | shared hit=967
+ nodos: ['Index Scan  using ex_reserva_superpuesta  on reserva']
+ muestra: [(True,)]
+
+### 26.4 Cantidad de habitaciones libres por tipo en un hotel para un período
+ tablas=3 | mediana 1.4 ms | filas 2 | shared hit=186
+ nodos: ['GroupAggregate', 'Sort', 'Sort', 'Sort', 'Nested Loop', 'Nested Loop']
+ muestra: [('Suite', 1), ('Triple', 1)]

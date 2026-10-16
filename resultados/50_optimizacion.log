@@ -1,0 +1,226 @@
+[costo INSERT 20.000 reservas — índices de la estrategia base] 1561 ms
+
+==============================================================================
+OPTIMIZACIÓN 1 — Reservas por año: EXTRACT → rango
+==============================================================================
+
+--- ORIGINAL
+mediana 971.64 ms | filas 1 | shared hit=8319 read=83889
+nodos: ['Seq Scan  on reserva']
+Aggregate  (cost=243258.01..243258.02 rows=1 width=40) (actual time=968.828..968.830 rows=1 loops=1)
+  Buffers: shared hit=8319 read=83889
+  ->  Seq Scan on reserva  (cost=0.00..243257.06 rows=189 width=6) (actual time=840.299..963.263 rows=64985 loops=1)
+        Filter: ((EXTRACT(year FROM fecha_inicio) = '2024'::numeric) AND (EXTRACT(month FROM fecha_inicio) = '7'::numeric))
+        Rows Removed by Filter: 7470595
+        Buffers: shared hit=8319 read=83889
+Planning Time: 0.110 ms
+JIT:
+  Functions: 5
+  Options: Inlining false, Optimization false, Expressions true, Deforming true
+  Timing: Generation 0.584 ms, Inlining 0.000 ms, Optimization 0.235 ms, Emission 3.406 ms, Total 4.225 ms
+Execution Time: 969.531 ms
+
+--- OPTIMIZADA
+mediana 33.42 ms | filas 1 | shared hit=38319
+nodos: ['Index Scan  using ix_reserva_fecha_inicio  on reserva']
+Aggregate  (cost=2735.37..2735.38 rows=1 width=40) (actual time=46.562..46.564 rows=1 loops=1)
+  Buffers: shared hit=38319
+  ->  Index Scan using ix_reserva_fecha_inicio on reserva  (cost=0.43..2417.32 rows=63610 width=6) (actual time=0.018..34.388 rows=64985 loops=1)
+        Index Cond: ((fecha_inicio >= '2024-07-01'::date) AND (fecha_inicio < '2024-08-01'::date))
+        Buffers: shared hit=38319
+Planning Time: 0.127 ms
+Execution Time: 46.596 ms
+>> 971.6 ms -> 33.4 ms  (x29.1)
+
+==============================================================================
+OPTIMIZACIÓN 2 — Últimas 10 reservas de un huésped frecuente: índice (huesped_id, fecha_inicio DESC)
+==============================================================================
+
+--- ORIGINAL
+mediana 1.92 ms | filas 10 | shared hit=2264
+nodos: ['Index Scan']
+Limit  (cost=0.43..169.53 rows=10 width=18) (actual time=0.406..1.345 rows=10 loops=1)
+  Buffers: shared hit=2264
+  ->  Index Scan Backward using ix_reserva_fecha_inicio on reserva  (cost=0.43..251161.91 rows=14853 width=18) (actual time=0.405..1.333 rows=10 loops=1)
+        Filter: (huesped_id = 1)
+        Rows Removed by Filter: 4276
+        Buffers: shared hit=2264
+Planning Time: 0.079 ms
+Execution Time: 1.362 ms
+cambio aplicado en 4.3 s
+
+--- OPTIMIZADA
+mediana 0.35 ms | filas 10 | shared hit=13
+nodos: ['Index Scan  using ix_reserva_huesped_fecha  on reserva']
+Limit  (cost=0.43..37.93 rows=10 width=18) (actual time=0.006..0.010 rows=10 loops=1)
+  Buffers: shared hit=13
+  ->  Index Scan using ix_reserva_huesped_fecha on reserva  (cost=0.43..52745.87 rows=14067 width=18) (actual time=0.006..0.008 rows=10 loops=1)
+        Index Cond: (huesped_id = 1)
+        Buffers: shared hit=13
+Planning Time: 0.025 ms
+Execution Time: 0.016 ms
+>> 1.9 ms -> 0.4 ms  (x5.4)
+tamaño nuevo índice: 226 MB | reemplaza a ix_reserva_huesped: 72 MB
+
+==============================================================================
+OPTIMIZACIÓN 3 — Búsqueda de huésped sin distinguir mayúsculas: índice funcional
+==============================================================================
+
+--- ORIGINAL
+mediana 221.72 ms | filas 342 | shared hit=422 read=11057
+nodos: ['Seq Scan  on huesped']
+Seq Scan on huesped  (cost=0.00..31479.00 rows=25 width=22) (actual time=1.230..260.793 rows=342 loops=1)
+  Filter: ((lower((apellido)::text) = 'choque'::text) AND (lower((nombre)::text) = 'micaela'::text))
+  Rows Removed by Filter: 999658
+  Buffers: shared hit=422 read=11057
+Planning Time: 0.082 ms
+Execution Time: 260.897 ms
+cambio aplicado en 1.5 s
+
+--- OPTIMIZADA
+mediana 1.13 ms | filas 342 | shared hit=340
+nodos: ['Bitmap Heap Scan  on huesped', 'Bitmap Index Scan  on ix_huesped_lower']
+Bitmap Heap Scan on huesped  (cost=7.69..1117.53 rows=319 width=22) (actual time=0.059..0.277 rows=342 loops=1)
+  Recheck Cond: ((lower((apellido)::text) = 'choque'::text) AND (lower((nombre)::text) = 'micaela'::text))
+  Heap Blocks: exact=337
+  Buffers: shared hit=340
+  ->  Bitmap Index Scan on ix_huesped_lower  (cost=0.00..7.61 rows=319 width=0) (actual time=0.028..0.028 rows=342 loops=1)
+        Index Cond: ((lower((apellido)::text) = 'choque'::text) AND (lower((nombre)::text) = 'micaela'::text))
+        Buffers: shared hit=3
+Planning Time: 0.052 ms
+Execution Time: 0.305 ms
+>> 221.7 ms -> 1.1 ms  (x196.2)
+
+==============================================================================
+OPTIMIZACIÓN 4 — Facturación diaria de un semestre: índice de cobertura
+==============================================================================
+
+--- ORIGINAL
+mediana 243.85 ms | filas 181 | shared hit=196967
+nodos: ['GroupAggregate', 'Index Scan  using ix_reserva_fecha_inicio  on reserva']
+GroupAggregate  (cost=0.43..15880.02 rows=4565 width=36) (actual time=1.901..230.634 rows=181 loops=1)
+  Group Key: fecha_inicio
+  Buffers: shared hit=196967
+  ->  Index Scan using ix_reserva_fecha_inicio on reserva  (cost=0.43..12553.00 rows=261597 width=14) (actual time=0.019..169.863 rows=264909 loops=1)
+        Index Cond: ((fecha_inicio >= '2025-01-01'::date) AND (fecha_inicio < '2025-07-01'::date))
+        Filter: (estado = 'F'::bpchar)
+        Rows Removed by Filter: 43838
+        Buffers: shared hit=196967
+Planning Time: 0.153 ms
+Execution Time: 230.705 ms
+cambio aplicado en 5.4 s
+
+--- OPTIMIZADA
+mediana 243.57 ms | filas 181 | shared hit=196967
+nodos: ['GroupAggregate', 'Index Scan  using ix_reserva_fecha_inicio  on reserva']
+GroupAggregate  (cost=0.43..14594.99 rows=4563 width=36) (actual time=1.694..246.588 rows=181 loops=1)
+  Group Key: fecha_inicio
+  Buffers: shared hit=196967
+  ->  Index Scan using ix_reserva_fecha_inicio on reserva  (cost=0.43..11546.37 rows=239327 width=14) (actual time=0.062..181.919 rows=264909 loops=1)
+        Index Cond: ((fecha_inicio >= '2025-01-01'::date) AND (fecha_inicio < '2025-07-01'::date))
+        Filter: (estado = 'F'::bpchar)
+        Rows Removed by Filter: 43838
+        Buffers: shared hit=196967
+Planning Time: 0.167 ms
+Execution Time: 246.716 ms
+>> 243.9 ms -> 243.6 ms  (x1.0)
+
+==============================================================================
+OPTIMIZACIÓN 5 — Reservas de un hotel en un mes: hotel_id en reserva + índice (hotel_id, fecha_inicio)
+==============================================================================
+
+--- ORIGINAL
+mediana 29.46 ms | filas 1 | shared hit=40891
+nodos: ['GroupAggregate', 'Hash Join', 'Index Scan  using ix_reserva_fecha_inicio  on reserva', 'Index Scan  using uq_habitacion_numero  on habitacion']
+GroupAggregate  (cost=44.49..2513.73 rows=1 width=12) (actual time=33.971..33.977 rows=1 loops=1)
+  Buffers: shared hit=40891
+  ->  Hash Join  (cost=44.49..2513.21 rows=206 width=4) (actual time=0.194..33.885 rows=256 loops=1)
+        Hash Cond: (r.habitacion_id = hb.habitacion_id)
+        Buffers: shared hit=40891
+        ->  Index Scan using ix_reserva_fecha_inicio on reserva r  (cost=0.43..2309.81 rows=60664 width=4) (actual time=0.009..28.364 rows=67202 loops=1)
+              Index Cond: ((fecha_inicio >= '2025-01-01'::date) AND (fecha_inicio < '2025-02-01'::date))
+              Buffers: shared hit=40887
+        ->  Hash  (cost=43.74..43.74 rows=26 width=8) (actual time=0.023..0.026 rows=35 loops=1)
+              Buckets: 1024  Batches: 1  Memory Usage: 10kB
+              Buffers: shared hit=4
+              ->  Index Scan using uq_habitacion_numero on habitacion hb  (cost=0.28..43.74 rows=26 width=8) (actual time=0.009..0.016 rows=35 loops=1)
+                    Index Cond: (hotel_id = 13)
+                    Buffers: shared hit=4
+Planning:
+  Buffers: shared hit=6
+Planning Time: 0.243 ms
+Execution Time: 34.017 ms
+cambio aplicado en 582.5 s
+
+--- OPTIMIZADA
+mediana 0.65 ms | filas 1 | shared hit=250
+nodos: ['GroupAggregate', 'Bitmap Heap Scan  on reserva', 'Bitmap Index Scan  on ix_reserva_hotel_fecha']
+GroupAggregate  (cost=7.20..857.62 rows=1 width=12) (actual time=0.298..0.299 rows=1 loops=1)
+  Buffers: shared hit=250
+  ->  Bitmap Heap Scan on reserva  (cost=7.20..857.07 rows=217 width=4) (actual time=0.058..0.230 rows=256 loops=1)
+        Recheck Cond: ((hotel_id = 13) AND (fecha_inicio >= '2025-01-01'::date) AND (fecha_inicio < '2025-02-01'::date))
+        Heap Blocks: exact=247
+        Buffers: shared hit=250
+        ->  Bitmap Index Scan on ix_reserva_hotel_fecha  (cost=0.00..7.15 rows=217 width=0) (actual time=0.028..0.029 rows=256 loops=1)
+              Index Cond: ((hotel_id = 13) AND (fecha_inicio >= '2025-01-01'::date) AND (fecha_inicio < '2025-02-01'::date))
+              Buffers: shared hit=3
+Planning Time: 0.090 ms
+Execution Time: 0.335 ms
+>> 29.5 ms -> 0.6 ms  (x45.3)
+tamaño ix_reserva_hotel_fecha: 114 MB | tabla reserva ahora: 1494 MB
+
+==============================================================================
+OPTIMIZACIÓN 6 — Paginación profunda: OFFSET → keyset (seek)
+==============================================================================
+
+--- ORIGINAL
+mediana 2403.53 ms | filas 50 | shared hit=6698145 read=149118
+nodos: ['Index Scan  using reserva_pkey  on reserva']
+Limit  (cost=661079.78..661086.39 rows=50 width=20) (actual time=2651.090..2651.100 rows=50 loops=1)
+  Buffers: shared hit=6698145 read=149118
+  ->  Index Scan using reserva_pkey on reserva  (cost=0.43..1004227.30 rows=7595358 width=20) (actual time=0.065..2453.685 rows=5000050 loops=1)
+        Buffers: shared hit=6698145 read=149118
+Planning Time: 0.106 ms
+JIT:
+  Functions: 4
+  Options: Inlining true, Optimization true, Expressions true, Deforming true
+  Timing: Generation 0.241 ms, Inlining 0.020 ms, Optimization 2.881 ms, Emission 4.714 ms, Total 7.855 ms
+Execution Time: 2651.452 ms
+
+--- OPTIMIZADA
+mediana 0.26 ms | filas 50 | shared hit=4
+nodos: ['Index Scan  using reserva_pkey  on reserva']
+Limit  (cost=0.43..16.26 rows=50 width=20) (actual time=0.005..0.013 rows=50 loops=1)
+  Buffers: shared hit=4
+  ->  Index Scan using reserva_pkey on reserva  (cost=0.43..817373.26 rows=2581607 width=20) (actual time=0.004..0.010 rows=50 loops=1)
+        Index Cond: (reserva_id > 5000000)
+        Buffers: shared hit=4
+Planning Time: 0.021 ms
+Execution Time: 0.021 ms
+>> 2403.5 ms -> 0.3 ms  (x9165.9)
+
+==============================================================================
+OPTIMIZACIÓN 7 — Huéspedes sin reservas desde 2025: NOT IN → NOT EXISTS
+==============================================================================
+Traceback (most recent call last):
+  File "/home/claude/tp-bd/sql/50_optimizacion.py", line 84, in <module>
+    caso(7, "Huéspedes sin reservas desde 2025: NOT IN → NOT EXISTS",
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+         "SELECT count(*) FROM huesped WHERE huesped_id NOT IN (SELECT huesped_id FROM reserva WHERE fecha_inicio >= '2025-01-01')",
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+         "SELECT count(*) FROM huesped h WHERE NOT EXISTS (SELECT 1 FROM reserva r WHERE r.huesped_id = h.huesped_id AND r.fecha_inicio >= '2025-01-01')",
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+         reps=2)
+         ^^^^^^^
+  File "/home/claude/tp-bd/sql/50_optimizacion.py", line 27, in caso
+    ms0, r0 = medir(c, "ORIGINAL", original, reps=reps)
+              ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/claude/tp-bd/sql/tp.py", line 59, in medir
+    ms, n = bench(c, sql, params, reps)
+            ~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/claude/tp-bd/sql/tp.py", line 29, in bench
+    c.execute(sql, params).fetchall()
+    ~~~~~~~~~^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/dist-packages/psycopg/connection.py", line 304, in execute
+    raise ex.with_traceback(None)
+psycopg.errors.QueryCanceled: canceling statement due to statement timeout

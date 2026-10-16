@@ -1,0 +1,46 @@
+
+==============================================================================
+Optimización 4 — por qué no se usó el índice de cobertura
+==============================================================================
+GroupAggregate  (cost=0.43..17303.23 rows=4569 width=36)
+  Group Key: fecha_inicio
+  ->  Index Only Scan using ix_reserva_fact_cov on reserva  (cost=0.43..13898.92 rows=267776 width=14)
+        Index Cond: ((fecha_inicio >= '2025-01-01'::date) AND (fecha_inicio < '2025-07-01'::date))
+        Filter: (estado = 'F'::bpchar)
+
+visibilidad de páginas: (99112, 99112, Decimal('100.0'))
+tras VACUUM: (99112, 99112, Decimal('100.0'))
+
+--- Plan elegido tras VACUUM
+mediana 77.86 ms | filas 181 | shared hit=1817
+nodos: ['GroupAggregate', 'Index Only Scan  using ix_reserva_fact_cov  on reserva']
+GroupAggregate  (cost=0.43..16215.64 rows=4561 width=36) (actual time=0.533..90.947 rows=181 loops=1)
+  Group Key: fecha_inicio
+  Buffers: shared hit=1817
+  ->  Index Only Scan using ix_reserva_fact_cov on reserva  (cost=0.43..13029.51 rows=250329 width=14) (actual time=0.025..36.243 rows=264909 loops=1)
+        Index Cond: ((fecha_inicio >= '2025-01-01'::date) AND (fecha_inicio < '2025-07-01'::date))
+        Filter: (estado = 'F'::bpchar)
+        Rows Removed by Filter: 43838
+        Heap Fetches: 0
+        Buffers: shared hit=1817
+Planning Time: 0.175 ms
+Execution Time: 90.994 ms
+
+--- Index Only Scan forzado (enable_indexscan = off)
+mediana 594.92 ms | filas 181 | shared hit=160 read=98952
+nodos: ['HashAggregate', 'Seq Scan  on reserva']
+HashAggregate  (cost=234124.14..234181.15 rows=4561 width=36) (actual time=583.496..583.577 rows=181 loops=1)
+  Group Key: fecha_inicio
+  Batches: 1  Memory Usage: 337kB
+  Buffers: shared hit=160 read=98952
+  ->  Seq Scan on reserva  (cost=0.00..230995.03 rows=250329 width=14) (actual time=462.196..517.218 rows=264909 loops=1)
+        Filter: ((fecha_inicio >= '2025-01-01'::date) AND (fecha_inicio < '2025-07-01'::date) AND (estado = 'F'::bpchar))
+        Rows Removed by Filter: 7270671
+        Buffers: shared hit=160 read=98952
+Planning Time: 0.181 ms
+JIT:
+  Functions: 8
+  Options: Inlining false, Optimization false, Expressions true, Deforming true
+  Timing: Generation 0.633 ms, Inlining 0.000 ms, Optimization 0.327 ms, Emission 5.717 ms, Total 6.677 ms
+Execution Time: 584.362 ms
+FIN

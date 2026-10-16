@@ -1,0 +1,31 @@
+# PostgreSQL 16 para reproducir el TP.
+# Levantar:  docker compose up -d
+services:
+  db:
+    image: postgres:16
+    container_name: tp-bd-hoteles
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: hoteles
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./sql:/sql:ro                 # los scripts quedan visibles dentro del contenedor
+    shm_size: 1g                      # memoria compartida para shared_buffers grandes
+    command: >
+      postgres
+      -c shared_buffers=128MB
+      -c work_mem=4MB
+      -c maintenance_work_mem=64MB
+      -c max_wal_size=4GB
+      -c track_io_timing=on
+      -c shared_preload_libraries=pg_stat_statements,auto_explain
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d hoteles"]
+      interval: 5s
+      retries: 10
+
+volumes:
+  pgdata:

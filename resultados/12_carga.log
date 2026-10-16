@@ -1,0 +1,43 @@
+== 1) Comparación de métodos de carga sobre 50.000 filas ==
+NOTICE:  table "carga_prueba" does not exist, skipping
+INSERT fila por fila, autocommit (10.000 filas): 3.9 s -> 2,595 filas/s
+INSERT fila por fila, una transacción (50.000): 6.2 s -> 8,066 filas/s
+executemany en lote, una transacción (50.000): 2.5 s -> 19,850 filas/s
+COPY (50.000): 1.0 s -> 49,358 filas/s
+== 2) Carga principal ==
+SET
+Timing is on.
+DROP INDEX
+Time: 2.179 ms
+COPY 7535580
+Time: 477290.744 ms (07:57.291)
+CREATE INDEX
+Time: 3408.154 ms (00:03.408)
+VACUUM
+Time: 877.527 ms
+ reservas 
+----------
+  7535580
+(1 row)
+
+Time: 517.603 ms
+ tabla  | indices |  total  
+--------+---------+---------
+ 719 MB | 663 MB  | 1382 MB
+(1 row)
+
+Time: 0.718 ms
+         indice         |  tam   
+------------------------+--------
+ ix_reserva_huesped     | 72 MB
+ reserva_pkey           | 161 MB
+ ex_reserva_superpuesta | 429 MB
+(3 rows)
+
+Time: 1.107 ms
+ base_completa 
+---------------
+ 2199 MB
+(1 row)
+
+Time: 0.855 ms

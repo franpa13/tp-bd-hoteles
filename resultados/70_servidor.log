@@ -1,0 +1,140 @@
+
+==============================================================================
+PUNTO 23 — Cold cache vs warm cache
+==============================================================================
+Recorrido completo: count(*) de reserva       ejec 1 [FRÍA (servidor reiniciado + caché del SO vaciada)]    1803.6 ms | shared hit=443139 read=15641 dirtied=1 | IO: shared read=399.919
+Recorrido completo: count(*) de reserva       ejec 2 [caliente                                        ]    1246.8 ms | shared hit=458779 | IO: -
+Recorrido completo: count(*) de reserva       ejec 3 [caliente                                        ]    1110.1 ms | shared hit=458779 | IO: -
+Recorrido completo: count(*) de reserva       ejec 4 [caliente                                        ]    1256.7 ms | shared hit=458779 | IO: -
+   -> fría/caliente = x1.4
+Índice: reservas de 200 huéspedes             ejec 1 [FRÍA (servidor reiniciado + caché del SO vaciada)]      36.3 ms | shared hit=807 read=458 | IO: shared read=32.926
+Índice: reservas de 200 huéspedes             ejec 2 [caliente                                        ]       1.5 ms | shared hit=1262 | IO: -
+Índice: reservas de 200 huéspedes             ejec 3 [caliente                                        ]       1.6 ms | shared hit=1262 | IO: -
+Índice: reservas de 200 huéspedes             ejec 4 [caliente                                        ]       1.8 ms | shared hit=1262 | IO: -
+   -> fría/caliente = x23.3
+Agregación por mes 2024 (índice fecha)        ejec 1 [FRÍA (servidor reiniciado + caché del SO vaciada)]     215.0 ms | shared hit=551 read=535 | IO: shared read=10.298
+Agregación por mes 2024 (índice fecha)        ejec 2 [caliente                                        ]     166.3 ms | shared hit=1086 | IO: -
+Agregación por mes 2024 (índice fecha)        ejec 3 [caliente                                        ]     180.8 ms | shared hit=1086 | IO: -
+Agregación por mes 2024 (índice fecha)        ejec 4 [caliente                                        ]     169.8 ms | shared hit=1086 | IO: -
+   -> fría/caliente = x1.3
+
+>> Fría sólo para PostgreSQL (reinicio SIN vaciar la caché del SO):
+   ejec 1:    1227.1 ms | shared hit=443138 read=15641 | IO: shared read=126.601
+   ejec 2:    1177.1 ms | shared hit=458779 | IO: -
+
+==============================================================================
+PUNTO 43 — Configuración del servidor
+==============================================================================
+config_file: /var/lib/pgtp/data/postgresql.conf
+data_directory: /var/lib/pgtp/data
+postgresql.auto.conf contiene lo que se cambia con ALTER SYSTEM
+   ('autovacuum', 'on', None, 'default', 'sighup')
+   ('autovacuum_vacuum_scale_factor', '0.2', None, 'default', 'sighup')
+   ('checkpoint_completion_target', '0.9', None, 'default', 'sighup')
+   ('checkpoint_timeout', '300', 's', 'default', 'sighup')
+   ('deadlock_timeout', '1000', 'ms', 'default', 'superuser')
+   ('default_statistics_target', '100', None, 'default', 'user')
+   ('effective_cache_size', '524288', '8kB', 'default', 'user')
+   ('effective_io_concurrency', '1', None, 'default', 'user')
+   ('from_collapse_limit', '8', None, 'default', 'user')
+   ('fsync', 'on', None, 'default', 'sighup')
+   ('hash_mem_multiplier', '2', None, 'default', 'user')
+   ('huge_pages', 'try', None, 'default', 'postmaster')
+   ('join_collapse_limit', '8', None, 'default', 'user')
+   ('lock_timeout', '0', 'ms', 'default', 'user')
+   ('log_min_duration_statement', '-1', 'ms', 'default', 'superuser')
+   ('maintenance_work_mem', '65536', 'kB', 'default', 'user')
+   ('max_connections', '100', None, 'configuration file', 'postmaster')
+   ('max_parallel_workers_per_gather', '0', None, 'session', 'user')
+   ('max_wal_size', '1024', 'MB', 'configuration file', 'sighup')
+   ('random_page_cost', '4', None, 'default', 'user')
+   ('seq_page_cost', '1', None, 'default', 'user')
+   ('shared_buffers', '16384', '8kB', 'configuration file', 'postmaster')
+   ('statement_timeout', '0', 'ms', 'default', 'user')
+   ('superuser_reserved_connections', '3', None, 'default', 'postmaster')
+   ('synchronous_commit', 'on', None, 'default', 'user')
+   ('temp_buffers', '1024', '8kB', 'default', 'user')
+   ('temp_file_limit', '-1', 'kB', 'default', 'superuser')
+   ('track_io_timing', 'on', None, 'configuration file', 'superuser')
+   ('wal_buffers', '512', '8kB', 'default', 'postmaster')
+   ('work_mem', '4096', 'kB', 'default', 'user')
+
+>> work_mem: ordenamiento en memoria vs en disco
+   work_mem=4MB  :    939.6 ms | external merge  Disk: 14520kB
+   work_mem=64MB :    709.4 ms | quicksort  Memory: 47860kB
+>> work_mem: Hash Join / HashAggregate
+   work_mem=4MB   :   2509.4 ms | ['Sort Method: top-N heapsort  Memory: 25kB', 'GroupAggregate']
+   work_mem=256MB :   5792.3 ms | Batches: 1  Memory Usage: 114705kB
+>> maintenance_work_mem: CREATE INDEX
+   maintenance_work_mem=16MB  : CREATE INDEX (fecha_fin)   4.4 s
+   maintenance_work_mem=512MB : CREATE INDEX (fecha_fin)   2.8 s
+
+==============================================================================
+PUNTO 44 — shared_buffers (equivalente al InnoDB Buffer Pool)
+==============================================================================
+shared_buffers=128MB ejec 1:   1639.5 ms | shared read=99112
+shared_buffers=128MB ejec 2:   1417.9 ms | shared hit=32 read=99080
+shared_buffers=128MB ejec 3:   1357.3 ms | shared hit=64 read=99048
+   contenido del buffer cache (top 5 relaciones):
+      ('reserva', 96, '768 kB', Decimal('0.6'))
+      ('pg_attribute', 34, '272 kB', Decimal('0.2'))
+      ('pg_proc', 19, '152 kB', Decimal('0.1'))
+      ('pg_class', 13, '104 kB', Decimal('0.1'))
+      ('pg_operator', 11, '88 kB', Decimal('0.1'))
+   uso de páginas (usagecount): [(1, 180), (2, 27), (3, 16), (4, 15), (5, 94), (None, 16052)]
+   tasa de aciertos en caché desde el reinicio: 95.88 %
+shared_buffers=2GB   ejec 1:   1654.2 ms | shared read=99112
+shared_buffers=2GB   ejec 2:   1507.8 ms | shared hit=32 read=99080
+shared_buffers=2GB   ejec 3:   1530.2 ms | shared hit=64 read=99048
+   contenido del buffer cache (top 5 relaciones):
+      ('reserva', 96, '768 kB', Decimal('0.0'))
+      ('pg_attribute', 34, '272 kB', Decimal('0.0'))
+      ('pg_proc', 19, '152 kB', Decimal('0.0'))
+      ('pg_class', 13, '104 kB', Decimal('0.0'))
+      ('pg_operator', 11, '88 kB', Decimal('0.0'))
+   uso de páginas (usagecount): [(1, 179), (2, 27), (3, 17), (4, 14), (5, 94), (None, 261813)]
+   tasa de aciertos en caché desde el reinicio: 95.84 %
+
+==============================================================================
+PUNTO 45 — ¿CPU, disco o red?
+==============================================================================
+DISCO (fría): 930 ms | shared read=99112 | shared read=261.371
+misma, caliente: 536 ms | shared hit=32 read=99080 | shared read=143.257
+CPU (caliente, md5 + percentil): 1495 ms | shared hit=11153, temp read=10056 written=10083 | IO: temp read=15.105 write=27.073
+   tiempo de pared 1.33 s | CPU usada por el proceso servidor 1.32 s -> 99 % de un núcleo
+RED / TRANSPORTE: mismo trabajo en el servidor, distinto volumen enviado al cliente
+   count(*) en el servidor (1 fila)    servidor      156 ms | cliente       48 ms | filas         1 | ~   0.0 MB de texto
+   traer 1,2 M filas, 2 columnas       servidor      343 ms | cliente      646 ms | filas 1,207,044 | ~  20.5 MB de texto
+unknown PostgreSQL timezone: 'AMERICA0'; will use UTC
+   traer 1,2 M filas, SELECT *         servidor      228 ms | cliente     3842 ms | filas 1,207,044 | ~ 119.7 MB de texto
+Ida y vuelta (round trips): 1.000 consultas de 1 fila vs 1 consulta de 1.000 filas
+   1.000 consultas: 290 ms | 1 consulta con ANY(): 9 ms
+   1.000 consultas por TCP (localhost) en lugar de socket Unix: 124 ms
+
+==============================================================================
+PUNTO 46 — Costo de conexión y pool de conexiones
+==============================================================================
+abrir+cerrar conexión (socket Unix): mediana 2.78 ms
+abrir+cerrar conexión (TCP localhost): mediana 3.20 ms
+   clientes= 1 conexión persistente (pool)      tps=     9171 | latencia media 0.109 ms
+   clientes= 1 nueva conexión por transacción   tps=      241 | latencia media 4.149 ms
+   clientes= 8 conexión persistente (pool)      tps=    26682 | latencia media 0.300 ms
+   clientes= 8 nueva conexión por transacción   tps=      317 | latencia media 25.214 ms
+   clientes=32 conexión persistente (pool)      tps=    22693 | latencia media 1.410 ms
+   clientes=32 nueva conexión por transacción   tps=      328 | latencia media 97.648 ms
+pool en la aplicación (psycopg_pool) vs conexión por pedido, 2.000 pedidos con 8 hilos:
+   sin pool: 6.76 s (296 pedidos/s) | con pool de 8: 0.63 s (3155 pedidos/s)
+
+==============================================================================
+PUNTO 47 — Slow query log, auto_explain y pg_stat_statements
+==============================================================================
+Traceback (most recent call last):
+  File "/home/claude/tp-bd/sql/70_servidor.py", line 207, in <module>
+    sql_admin("ALTER SYSTEM SET auto_explain.log_min_duration = '500ms'")
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/claude/tp-bd/sql/70_servidor.py", line 26, in sql_admin
+    return c.execute(s).fetchall() if s.strip().upper().startswith(("SELECT", "SHOW")) else c.execute(s)
+                                                                                            ~~~~~~~~~^^^
+  File "/usr/local/lib/python3.13/dist-packages/psycopg/connection.py", line 304, in execute
+    raise ex.with_traceback(None)
+psycopg.errors.UndefinedObject: unrecognized configuration parameter "auto_explain.log_min_duration"

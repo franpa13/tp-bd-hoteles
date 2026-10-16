@@ -1,0 +1,496 @@
+
+==============================================================================
+PUNTO 12 — B+Tree: altura, páginas y costo de búsqueda
+==============================================================================
+bt_metap(reserva_pkey): (340322, 4, 412, 2, 412, 2, 0, -1.0, True)
+nivel de la raíz = 2 -> altura (niveles) = 3
+página raíz: (72, 15, 8192, 6716)
+una hoja (página 1): ('l', 367, 16, 808)
+páginas del índice: 20663 | páginas de la tabla: 92002
+unknown PostgreSQL timezone: 'AMERICA0'; will use UTC
+
+--- Búsqueda por PK con índice
+mediana 0.26 ms | filas 1 | shared hit=4
+nodos: ['Index Scan  using reserva_pkey  on reserva']
+Index Scan using reserva_pkey on reserva  (cost=0.43..8.45 rows=1 width=68) (actual time=0.002..0.002 rows=1 loops=1)
+  Index Cond: (reserva_id = 3000000)
+  Buffers: shared hit=4
+Planning Time: 0.015 ms
+Execution Time: 0.007 ms
+
+--- Misma búsqueda forzando recorrido secuencial
+mediana 397.21 ms | filas 1 | shared hit=11202 read=80800
+nodos: ['Seq Scan  on reserva']
+Seq Scan on reserva  (cost=0.00..186201.46 rows=1 width=68) (actual time=221.953..440.460 rows=1 loops=1)
+  Filter: (reserva_id = 3000000)
+  Rows Removed by Filter: 7535579
+  Buffers: shared hit=11202 read=80800
+Planning Time: 0.107 ms
+JIT:
+  Functions: 2
+  Options: Inlining false, Optimization false, Expressions true, Deforming true
+  Timing: Generation 0.166 ms, Inlining 0.000 ms, Optimization 0.207 ms, Emission 2.094 ms, Total 2.467 ms
+Execution Time: 440.733 ms
+
+==============================================================================
+PUNTO 13 — Otros tipos de índices
+==============================================================================
+correlación física (pg_stats):
+   ('fecha_creacion', Decimal('1.000'))
+   ('fecha_inicio', Decimal('1.000'))
+   ('habitacion_id', Decimal('0.000'))
+   ('huesped_id', Decimal('0.010'))
+   ('reserva_id', Decimal('1.000'))
+
+--- Rango de una semana por fecha_creacion SIN índice
+mediana 505.57 ms | filas 1 | shared hit=11362 read=80640
+nodos: ['Seq Scan  on reserva']
+crear BRIN: 1.0 s, tamaño 40 kB
+
+--- Mismo rango con BRIN
+mediana 2.83 ms | filas 1 | shared hit=260
+nodos: ['Bitmap Heap Scan  on reserva', 'Bitmap Index Scan  on ix_brin_creacion']
+Aggregate  (cost=30131.19..30131.20 rows=1 width=40) (actual time=2.864..2.865 rows=1 loops=1)
+  Buffers: shared hit=260
+  ->  Bitmap Heap Scan on reserva  (cost=22.59..30080.08 rows=10221 width=6) (actual time=0.100..2.028 rows=10780 loops=1)
+        Recheck Cond: ((fecha_creacion >= '2024-03-01 00:00:00+00'::timestamp with time zone) AND (fecha_creacion < '2024-03-08 00:00:00+00'::timestamp with time zone))
+        Rows Removed by Index Recheck: 10131
+        Heap Blocks: lossy=256
+        Buffers: shared hit=260
+        ->  Bitmap Index Scan on ix_brin_creacion  (cost=0.00..20.03 rows=10481 width=0) (actual time=0.074..0.074 rows=2560 loops=1)
+              Index Cond: ((fecha_creacion >= '2024-03-01 00:00:00+00'::timestamp with time zone) AND (fecha_creacion < '2024-03-08 00:00:00+00'::timestamp with time zone))
+              Buffers: shared hit=4
+Planning:
+  Buffers: shared hit=1
+Planning Time: 0.053 ms
+Execution Time: 2.947 ms
+crear B-Tree: 2.3 s, tamaño 138 MB
+
+--- Mismo rango con B-Tree
+mediana 2.97 ms | filas 1 | shared hit=162
+nodos: ['Index Scan  using ix_bt_creacion  on reserva']
+
+--- BRIN sobre habitacion_id (correlación ~0): habitacion_id = 500
+mediana 403.89 ms | filas 1 | shared hit=11906 read=80096
+nodos: ['Seq Scan  on reserva']
+Aggregate  (cost=186199.20..186199.21 rows=1 width=8) (actual time=401.281..401.283 rows=1 loops=1)
+  Buffers: shared hit=11906 read=80096
+  ->  Seq Scan on reserva  (cost=0.00..186196.75 rows=980 width=0) (actual time=3.282..400.823 rows=774 loops=1)
+        Filter: (habitacion_id = 500)
+        Rows Removed by Filter: 7534806
+        Buffers: shared hit=11906 read=80096
+Planning:
+  Buffers: shared hit=1
+Planning Time: 0.104 ms
+JIT:
+  Functions: 4
+  Options: Inlining false, Optimization false, Expressions true, Deforming true
+  Timing: Generation 0.278 ms, Inlining 0.000 ms, Optimization 0.219 ms, Emission 2.178 ms, Total 2.676 ms
+Execution Time: 401.655 ms
+tamaños: hash 32 MB | btree 50 MB
+
+--- Igualdad por email con índice HASH
+mediana 0.09 ms | filas 0 | shared hit=1
+nodos: ['Index Scan  using ix_email_hash  on huesped_email']
+rango con HASH: Aggregate  (cost=23391.33..23391.34 rows=1 width=8)
+  ->  Seq Scan on huesped_email  (cost=0.00..23391.06 rows=107 width=0)
+        Filter: ((email)::text > 'z'::text)
+
+--- LIKE '%rrey%' sin índice
+mediana 98.23 ms | filas 1 | shared hit=128 read=11351
+nodos: ['Seq Scan  on huesped']
+crear GIN trigramas: 1.2 s, tamaño 13 MB
+
+--- LIKE '%rrey%' con GIN (pg_trgm)
+mediana 15.24 ms | filas 1 | shared hit=8163
+nodos: ['Bitmap Heap Scan  on huesped', 'Bitmap Index Scan  on ix_huesped_trgm']
+Aggregate  (cost=12428.73..12428.74 rows=1 width=8) (actual time=14.958..14.961 rows=1 loops=1)
+  Buffers: shared hit=8163
+  ->  Bitmap Heap Scan on huesped  (cost=136.50..12393.48 rows=14100 width=0) (actual time=4.391..14.285 rows=14048 loops=1)
+        Recheck Cond: ((apellido)::text ~~ '%rrey%'::text)
+        Heap Blocks: exact=8127
+        Buffers: shared hit=8163
+        ->  Bitmap Index Scan on ix_huesped_trgm  (cost=0.00..132.97 rows=14100 width=0) (actual time=3.359..3.360 rows=14048 loops=1)
+              Index Cond: ((apellido)::text ~~ '%rrey%'::text)
+              Buffers: shared hit=36
+Planning:
+  Buffers: shared hit=1
+Planning Time: 0.134 ms
+Execution Time: 15.026 ms
+parcial WHERE estado='P': 1064 kB | completo (estado, fecha_inicio): 51 MB
+
+--- Pendientes que vencen en enero 2027 (índice parcial)
+mediana 15.58 ms | filas 22975 | shared hit=18202
+nodos: ['Index Scan  using ix_parcial_pend  on reserva']
+Index Scan using ix_parcial_pend on reserva  (cost=0.29..59.59 rows=1363 width=8) (actual time=0.017..10.621 rows=22975 loops=1)
+  Index Cond: ((fecha_inicio >= '2027-01-01'::date) AND (fecha_inicio < '2027-02-01'::date))
+  Buffers: shared hit=18202
+Planning Time: 0.139 ms
+Execution Time: 11.548 ms
+
+--- GiST de la restricción EXCLUDE usado para buscar superposición
+mediana 0.26 ms | filas 2 | shared hit=7
+nodos: ['Index Scan  using ex_reserva_superpuesta  on reserva']
+Index Scan using ex_reserva_superpuesta on reserva  (cost=0.41..36.57 rows=8 width=8) (actual time=0.040..0.041 rows=2 loops=1)
+  Index Cond: ((habitacion_id = 1234) AND (daterange(fecha_inicio, fecha_fin, '[)'::text) && '[2026-07-10,2026-07-15)'::daterange))
+  Buffers: shared hit=7
+Planning Time: 0.054 ms
+Execution Time: 0.047 ms
+
+==============================================================================
+PUNTO 14 — Índices compuestos y regla del prefijo izquierdo
+==============================================================================
+
+--- A: apellido
+mediana 15.18 ms | filas 12952 | shared hit=7855
+nodos: ['Bitmap Heap Scan  on huesped', 'Bitmap Index Scan  on ix_h_ape_nom_nac']
+Bitmap Heap Scan on huesped  (cost=369.57..12599.56 rows=13567 width=8) (actual time=2.584..12.862 rows=12952 loops=1)
+  Recheck Cond: ((apellido)::text = 'Tolaba'::text)
+  Heap Blocks: exact=7790
+  Buffers: shared hit=7855
+  ->  Bitmap Index Scan on ix_h_ape_nom_nac  (cost=0.00..366.18 rows=13567 width=0) (actual time=1.459..1.460 rows=12952 loops=1)
+        Index Cond: ((apellido)::text = 'Tolaba'::text)
+        Buffers: shared hit=65
+Planning Time: 0.105 ms
+Execution Time: 13.633 ms
+
+--- B: apellido + nombre
+mediana 0.61 ms | filas 292 | shared hit=289
+nodos: ['Bitmap Heap Scan  on huesped', 'Bitmap Index Scan  on ix_h_ape_nom_nac']
+Bitmap Heap Scan on huesped  (cost=11.80..1152.68 rows=329 width=8) (actual time=0.102..0.321 rows=292 loops=1)
+  Recheck Cond: (((apellido)::text = 'Tolaba'::text) AND ((nombre)::text = 'Rocío'::text))
+  Heap Blocks: exact=285
+  Buffers: shared hit=289
+  ->  Bitmap Index Scan on ix_h_ape_nom_nac  (cost=0.00..11.71 rows=329 width=0) (actual time=0.036..0.036 rows=292 loops=1)
+        Index Cond: (((apellido)::text = 'Tolaba'::text) AND ((nombre)::text = 'Rocío'::text))
+        Buffers: shared hit=4
+Planning Time: 0.037 ms
+Execution Time: 0.347 ms
+
+--- C: apellido + nombre + nacimiento
+mediana 0.16 ms | filas 0 | shared hit=3
+nodos: ['Index Scan  using ix_h_ape_nom_nac  on huesped']
+Index Scan using ix_h_ape_nom_nac on huesped  (cost=0.42..8.45 rows=1 width=8) (actual time=0.004..0.004 rows=0 loops=1)
+  Index Cond: (((apellido)::text = 'Tolaba'::text) AND ((nombre)::text = 'Rocío'::text) AND (fecha_nacimiento = '1980-05-17'::date))
+  Buffers: shared hit=3
+Planning Time: 0.018 ms
+Execution Time: 0.008 ms
+
+--- D: apellido + nacimiento (salta nombre)
+mediana 0.65 ms | filas 3 | shared hit=68
+nodos: ['Index Scan  using ix_h_ape_nom_nac  on huesped']
+Index Scan using ix_h_ape_nom_nac on huesped  (cost=0.42..404.11 rows=1 width=8) (actual time=0.283..0.407 rows=3 loops=1)
+  Index Cond: (((apellido)::text = 'Tolaba'::text) AND (fecha_nacimiento = '1980-05-17'::date))
+  Buffers: shared hit=68
+Planning Time: 0.025 ms
+Execution Time: 0.414 ms
+
+--- E: nombre
+mediana 96.80 ms | filas 25041 | shared hit=10595 read=884
+nodos: ['Seq Scan  on huesped']
+Seq Scan on huesped  (cost=0.00..23979.00 rows=24233 width=8) (actual time=0.026..77.816 rows=25041 loops=1)
+  Filter: ((nombre)::text = 'Rocío'::text)
+  Rows Removed by Filter: 974959
+  Buffers: shared hit=10595 read=884
+Planning Time: 0.139 ms
+Execution Time: 79.105 ms
+
+--- F: nombre + nacimiento
+mediana 64.37 ms | filas 1 | shared hit=10755 read=724
+nodos: ['Seq Scan  on huesped']
+Seq Scan on huesped  (cost=0.00..26479.00 rows=1 width=8) (actual time=19.349..63.118 rows=1 loops=1)
+  Filter: (((nombre)::text = 'Rocío'::text) AND (fecha_nacimiento = '1980-05-17'::date))
+  Rows Removed by Filter: 999999
+  Buffers: shared hit=10755 read=724
+Planning Time: 0.101 ms
+Execution Time: 63.142 ms
+
+--- G: nacimiento
+mediana 55.31 ms | filas 48 | shared hit=10915 read=564
+nodos: ['Seq Scan  on huesped']
+Seq Scan on huesped  (cost=0.00..23979.00 rows=46 width=8) (actual time=0.231..54.499 rows=48 loops=1)
+  Filter: (fecha_nacimiento = '1980-05-17'::date)
+  Rows Removed by Filter: 999952
+  Buffers: shared hit=10915 read=564
+Planning Time: 0.097 ms
+Execution Time: 54.540 ms
+
+--- H: ORDER BY apellido, nombre LIMIT 20
+mediana 0.51 ms | filas 20 | shared hit=23
+nodos: ['Index Scan  using ix_h_ape_nom_nac  on huesped']
+Limit  (cost=0.42..2.03 rows=20 width=22) (actual time=0.007..0.015 rows=20 loops=1)
+  Buffers: shared hit=23
+  ->  Index Scan using ix_h_ape_nom_nac on huesped  (cost=0.42..80240.22 rows=1000000 width=22) (actual time=0.006..0.013 rows=20 loops=1)
+        Buffers: shared hit=23
+Planning Time: 0.062 ms
+Execution Time: 0.023 ms
+
+--- I: ORDER BY nombre LIMIT 20
+mediana 216.11 ms | filas 20 | shared hit=11075 read=404
+nodos: ['Sort', 'Sort', 'Sort', 'Seq Scan  on huesped']
+Limit  (cost=48088.64..48088.69 rows=20 width=22) (actual time=270.484..270.489 rows=20 loops=1)
+  Buffers: shared hit=11075 read=404
+  ->  Sort  (cost=48088.64..50588.64 rows=1000000 width=22) (actual time=270.482..270.484 rows=20 loops=1)
+        Sort Key: nombre
+        Sort Method: top-N heapsort  Memory: 27kB
+        Buffers: shared hit=11075 read=404
+        ->  Seq Scan on huesped  (cost=0.00..21479.00 rows=1000000 width=22) (actual time=0.009..96.500 rows=1000000 loops=1)
+              Buffers: shared hit=11075 read=404
+Planning Time: 0.095 ms
+Execution Time: 270.516 ms
+
+### Orden de columnas en reserva: (estado, fecha_inicio) vs (fecha_inicio, estado)
+
+>> índice (estado, fecha_inicio)  tamaño 51 MB
+
+--- (estado, fecha_inicio) | solo estado = 'N'
+mediana 14.10 ms | filas 1 | shared hit=717
+nodos: ['Index Only Scan  using ix_est_fecha  on reserva']
+Aggregate  (cost=6925.25..6925.26 rows=1 width=8) (actual time=29.226..29.228 rows=1 loops=1)
+  Buffers: shared hit=717
+  ->  Index Only Scan using ix_est_fecha on reserva  (cost=0.43..6188.65 rows=294641 width=0) (actual time=0.017..16.334 rows=284356 loops=1)
+        Index Cond: (estado = 'N'::bpchar)
+        Heap Fetches: 0
+        Buffers: shared hit=717
+Planning Time: 0.106 ms
+Execution Time: 29.256 ms
+
+--- (estado, fecha_inicio) | solo fecha (1 semana)
+mediana 14.90 ms | filas 1 | shared hit=6554
+nodos: ['Index Only Scan  using ix_est_fecha  on reserva']
+Aggregate  (cost=101816.16..101816.17 rows=1 width=8) (actual time=11.804..11.806 rows=1 loops=1)
+  Buffers: shared hit=6554
+  ->  Index Only Scan using ix_est_fecha on reserva  (cost=0.43..101791.37 rows=9914 width=0) (actual time=5.631..9.173 rows=9670 loops=1)
+        Index Cond: ((fecha_inicio >= '2025-06-01'::date) AND (fecha_inicio < '2025-06-08'::date))
+        Heap Fetches: 0
+        Buffers: shared hit=6554
+Planning Time: 0.123 ms
+JIT:
+  Functions: 3
+  Options: Inlining false, Optimization false, Expressions true, Deforming true
+  Timing: Generation 0.199 ms, Inlining 0.000 ms, Optimization 0.165 ms, Emission 1.928 ms, Total 2.292 ms
+Execution Time: 12.086 ms
+
+--- (estado, fecha_inicio) | estado + fecha (1 mes)
+mediana 0.57 ms | filas 1 | shared hit=8
+nodos: ['Index Only Scan  using ix_est_fecha  on reserva']
+Aggregate  (cost=140.38..140.39 rows=1 width=8) (actual time=0.509..0.509 rows=1 loops=1)
+  Buffers: shared hit=8
+  ->  Index Only Scan using ix_est_fecha on reserva  (cost=0.43..128.39 rows=4798 width=0) (actual time=0.008..0.255 rows=4321 loops=1)
+        Index Cond: ((estado = 'X'::bpchar) AND (fecha_inicio >= '2025-06-01'::date) AND (fecha_inicio < '2025-07-01'::date))
+        Heap Fetches: 0
+        Buffers: shared hit=8
+Planning Time: 0.044 ms
+Execution Time: 0.518 ms
+
+>> índice (fecha_inicio, estado)  tamaño 52 MB
+
+--- (fecha_inicio, estado) | solo estado = 'N'
+mediana 21.56 ms | filas 1 | shared hit=7068
+nodos: ['Index Only Scan  using ix_fecha_est  on reserva']
+Aggregate  (cost=86712.29..86712.30 rows=1 width=8) (actual time=42.362..42.364 rows=1 loops=1)
+  Buffers: shared hit=7068
+  ->  Index Only Scan using ix_fecha_est on reserva  (cost=0.43..85975.69 rows=294641 width=0) (actual time=0.018..28.492 rows=284356 loops=1)
+        Index Cond: (estado = 'N'::bpchar)
+        Heap Fetches: 0
+        Buffers: shared hit=7068
+Planning Time: 0.123 ms
+Execution Time: 42.408 ms
+
+--- (fecha_inicio, estado) | solo fecha (1 semana)
+mediana 0.58 ms | filas 1 | shared hit=13
+nodos: ['Index Only Scan  using ix_fecha_est  on reserva']
+Aggregate  (cost=259.50..259.51 rows=1 width=8) (actual time=1.040..1.040 rows=1 loops=1)
+  Buffers: shared hit=13
+  ->  Index Only Scan using ix_fecha_est on reserva  (cost=0.43..234.71 rows=9914 width=0) (actual time=0.004..0.598 rows=9670 loops=1)
+        Index Cond: ((fecha_inicio >= '2025-06-01'::date) AND (fecha_inicio < '2025-06-08'::date))
+        Heap Fetches: 0
+        Buffers: shared hit=13
+Planning Time: 0.032 ms
+Execution Time: 1.049 ms
+
+--- (fecha_inicio, estado) | estado + fecha (1 mes)
+mediana 0.50 ms | filas 1 | shared hit=40
+nodos: ['Index Only Scan  using ix_fecha_est  on reserva']
+Aggregate  (cost=824.75..824.75 rows=1 width=8) (actual time=0.601..0.602 rows=1 loops=1)
+  Buffers: shared hit=40
+  ->  Index Only Scan using ix_fecha_est on reserva  (cost=0.43..812.75 rows=4798 width=0) (actual time=0.017..0.400 rows=4321 loops=1)
+        Index Cond: ((fecha_inicio >= '2025-06-01'::date) AND (fecha_inicio < '2025-07-01'::date) AND (estado = 'X'::bpchar))
+        Heap Fetches: 0
+        Buffers: shared hit=40
+Planning Time: 0.087 ms
+Execution Time: 0.617 ms
+
+==============================================================================
+PUNTO 15 — Índice de cobertura
+==============================================================================
+
+--- Con índice simple (fecha_inicio)
+mediana 144.64 ms | filas 90 | shared hit=112756
+nodos: ['GroupAggregate', 'Index Scan  using ix_cov_simple  on reserva']
+GroupAggregate  (cost=0.43..8839.76 rows=4562 width=36) (actual time=1.583..136.585 rows=90 loops=1)
+  Group Key: fecha_inicio
+  Buffers: shared hit=112756
+  ->  Index Scan using ix_cov_simple on reserva  (cost=0.43..7001.32 rows=142513 width=14) (actual time=0.025..103.463 rows=156783 loops=1)
+        Index Cond: ((fecha_inicio >= '2025-01-01'::date) AND (fecha_inicio < '2025-04-01'::date))
+        Filter: (estado = 'F'::bpchar)
+        Rows Removed by Filter: 25899
+        Buffers: shared hit=112756
+Planning Time: 0.163 ms
+Execution Time: 136.642 ms
+
+--- Con índice de cobertura (fecha_inicio) INCLUDE (estado, fecha_fin, tarifa_noche)
+mediana 48.40 ms | filas 90 | shared hit=904
+nodos: ['GroupAggregate', 'Index Only Scan  using ix_cov  on reserva']
+GroupAggregate  (cost=0.43..9287.37 rows=4562 width=36) (actual time=0.599..58.566 rows=90 loops=1)
+  Group Key: fecha_inicio
+  Buffers: shared hit=904
+  ->  Index Only Scan using ix_cov on reserva  (cost=0.43..7448.93 rows=142513 width=14) (actual time=0.022..23.898 rows=156783 loops=1)
+        Index Cond: ((fecha_inicio >= '2025-01-01'::date) AND (fecha_inicio < '2025-04-01'::date))
+        Filter: (estado = 'F'::bpchar)
+        Rows Removed by Filter: 25899
+        Heap Fetches: 0
+        Buffers: shared hit=904
+Planning Time: 0.166 ms
+Execution Time: 58.606 ms
+tamaño índice cobertura: 291 MB
+tamaño índice simple: 52 MB
+
+==============================================================================
+PUNTO 16 — Índices funcionales
+==============================================================================
+
+--- lower(...) con índice común (apellido, nombre)
+mediana 216.27 ms | filas 339 | shared hit=7717 read=3762
+nodos: ['Seq Scan  on huesped']
+Seq Scan on huesped  (cost=0.00..31479.00 rows=25 width=22) (actual time=0.892..216.799 rows=339 loops=1)
+  Filter: ((lower((apellido)::text) = 'mamaní'::text) AND (lower((nombre)::text) = 'rocío'::text))
+  Rows Removed by Filter: 999661
+  Buffers: shared hit=7717 read=3762
+Planning Time: 0.082 ms
+Execution Time: 216.875 ms
+
+--- lower(...) con índice funcional (lower(apellido), lower(nombre))
+mediana 0.87 ms | filas 339 | shared hit=334
+nodos: ['Bitmap Heap Scan  on huesped', 'Bitmap Index Scan  on ix_lower_ape_nom']
+Bitmap Heap Scan on huesped  (cost=8.15..1257.74 rows=363 width=22) (actual time=0.055..0.258 rows=339 loops=1)
+  Recheck Cond: ((lower((apellido)::text) = 'mamaní'::text) AND (lower((nombre)::text) = 'rocío'::text))
+  Heap Blocks: exact=331
+  Buffers: shared hit=334
+  ->  Bitmap Index Scan on ix_lower_ape_nom  (cost=0.00..8.05 rows=363 width=0) (actual time=0.027..0.027 rows=339 loops=1)
+        Index Cond: ((lower((apellido)::text) = 'mamaní'::text) AND (lower((nombre)::text) = 'rocío'::text))
+        Buffers: shared hit=3
+Planning Time: 0.051 ms
+Execution Time: 0.284 ms
+
+--- Igualdad sin lower() con el funcional presente (usa el común)
+mediana 0.66 ms | filas 339 | shared hit=334
+nodos: ['Bitmap Heap Scan  on huesped', 'Bitmap Index Scan  on ix_ape_nom']
+Bitmap Heap Scan on huesped  (cost=8.15..1255.92 rows=363 width=8) (actual time=0.052..0.258 rows=339 loops=1)
+  Recheck Cond: (((apellido)::text = 'Mamaní'::text) AND ((nombre)::text = 'Rocío'::text))
+  Heap Blocks: exact=331
+  Buffers: shared hit=334
+  ->  Bitmap Index Scan on ix_ape_nom  (cost=0.00..8.05 rows=363 width=0) (actual time=0.025..0.025 rows=339 loops=1)
+        Index Cond: (((apellido)::text = 'Mamaní'::text) AND ((nombre)::text = 'Rocío'::text))
+        Buffers: shared hit=3
+Planning Time: 0.047 ms
+Execution Time: 0.282 ms
+
+==============================================================================
+PUNTO 17 — Cardinalidad y selectividad
+==============================================================================
+filas estimadas reserva: 7535580
+cantidad_huespedes   n_distinct=6.0  mcv={2,1,4,3,6,5}  freqs={0.4393,0.2434,0.13393334,0.1325,0.046033334,0.004833333}
+estado               n_distinct=5.0  mcv={F,X,N,C,P}  freqs={0.8096333,0.10056667,0.0391,0.029733334,0.020966666}
+fecha_inicio         n_distinct=4562.0  mcv={2018-07-28,2017-07-12,2016-02-29,2020-01-14,2020-01-25,2022-02-14,202  freqs={0.00083333335,0.0007,0.00056666665,0.00056666665,0.00056666
+habitacion_id        n_distinct=7672.0  mcv={6474,7203,5092,2250,4436,4829}  freqs={0.00046666668,0.00046666668,0.00043333333,0.0004,0.0004,0.0
+huesped_id           n_distinct=315649.0  mcv={1,2,3,4,5,7,18,6,12,10,22,27,8,23,25,53,9,14,17,20,31,36,39,44,49}  freqs={0.0017333333,0.00073333335,0.00056666665,0.0004,0.000366666
+reserva_id           n_distinct=-1.0  mcv=  freqs=
+tarifa_noche         n_distinct=32622.0  mcv={125.99,133.37,136.57,140.88,145.72,199.65}  freqs={0.00023333334,0.00023333334,0.00023333334,0.00023333334,0.0
+conteos reales por estado: [('F', 6116023, Decimal('81.16')), ('X', 753914, Decimal('10.00')), ('N', 284356, Decimal('3.77')), ('C', 232557, Decimal('3.09')), ('P', 148730, Decimal('1.97'))]
+
+--- estado = 'N'
+mediana 672.82 ms | filas 284356 | shared read=84639
+nodos: ['Bitmap Heap Scan  on reserva', 'Bitmap Index Scan  on ix_estado']
+Bitmap Heap Scan on reserva  (cost=3177.87..157093.30 rows=285089 width=8) (actual time=32.645..560.050 rows=284356 loops=1)
+  Recheck Cond: (estado = 'N'::bpchar)
+  Rows Removed by Index Recheck: 2586426
+  Heap Blocks: exact=51362 lossy=33035
+  Buffers: shared read=84639
+  ->  Bitmap Index Scan on ix_estado  (cost=0.00..3106.60 rows=285089 width=0) (actual time=20.656..20.657 rows=284356 loops=1)
+        Index Cond: (estado = 'N'::bpchar)
+        Buffers: shared read=242
+Planning Time: 0.255 ms
+JIT:
+  Functions: 4
+  Options: Inlining false, Optimization false, Expressions true, Deforming true
+  Timing: Generation 0.422 ms, Inlining 0.000 ms, Optimization 0.334 ms, Emission 2.599 ms, Total 3.355 ms
+Execution Time: 572.775 ms
+
+--- estado = 'P'
+mediana 62.09 ms | filas 148730 | shared hit=6407
+nodos: ['Bitmap Heap Scan  on reserva', 'Bitmap Index Scan  on ix_estado']
+Bitmap Heap Scan on reserva  (cost=1639.22..154619.20 rows=146940 width=8) (actual time=9.349..41.158 rows=148730 loops=1)
+  Recheck Cond: (estado = 'P'::bpchar)
+  Heap Blocks: exact=6279
+  Buffers: shared hit=6407
+  ->  Bitmap Index Scan on ix_estado  (cost=0.00..1602.48 rows=146940 width=0) (actual time=4.072..4.073 rows=148730 loops=1)
+        Index Cond: (estado = 'P'::bpchar)
+        Buffers: shared hit=128
+Planning Time: 0.146 ms
+JIT:
+  Functions: 4
+  Options: Inlining false, Optimization false, Expressions true, Deforming true
+  Timing: Generation 0.289 ms, Inlining 0.000 ms, Optimization 0.418 ms, Emission 3.900 ms, Total 4.607 ms
+Execution Time: 48.398 ms
+
+--- estado = 'F'
+mediana 2359.62 ms | filas 6116023 | shared hit=16224 read=75778
+nodos: ['Seq Scan  on reserva']
+Seq Scan on reserva  (cost=0.00..186194.30 rows=6113457 width=8) (actual time=2.607..849.125 rows=6116023 loops=1)
+  Filter: (estado = 'F'::bpchar)
+  Rows Removed by Filter: 1419557
+  Buffers: shared hit=16224 read=75778
+Planning Time: 0.133 ms
+JIT:
+  Functions: 4
+  Options: Inlining false, Optimization false, Expressions true, Deforming true
+  Timing: Generation 0.366 ms, Inlining 0.000 ms, Optimization 0.236 ms, Emission 2.347 ms, Total 2.949 ms
+Execution Time: 1102.447 ms
+tamaño índice estado: 50 MB
+
+==============================================================================
+PUNTO 18 — ¿Por qué no indexar todo?
+==============================================================================
+r_pocos: 3 índices | tabla 96 MB | índices 45 MB
+r_muchos: 13 índices | tabla 96 MB | índices 165 MB
+INSERT 100.000                                       r_pocos         712 ms
+INSERT 100.000                                       r_muchos       3290 ms
+UPDATE 100.000 (columna indexada en r_muchos)        r_pocos        2293 ms
+UPDATE 100.000 (columna indexada en r_muchos)        r_muchos       8320 ms
+UPDATE 100.000 (columna no indexada en ninguna)      r_pocos        1736 ms
+UPDATE 100.000 (columna no indexada en ninguna)      r_muchos       5510 ms
+DELETE 100.000                                       r_pocos         123 ms
+DELETE 100.000                                       r_muchos         72 ms
+LECTURA reservas de un huésped                   r_pocos       0.31 ms  filas=13
+LECTURA reservas de un huésped                   r_muchos      0.35 ms  filas=13
+LECTURA reservas de una habitación en 2015       r_pocos      87.48 ms  filas=70
+LECTURA reservas de una habitación en 2015       r_muchos      0.65 ms  filas=70
+LECTURA canceladas de un día                     r_pocos       1.45 ms  filas=140
+LECTURA canceladas de un día                     r_muchos      0.44 ms  filas=140
+Índices de r_muchos nunca usados por las lecturas (idx_scan = 0):
+   ('r_muchos_cantidad_huespedes_idx', 0, '8704 kB')
+   ('r_muchos_estado_fecha_inicio_idx', 0, '11 MB')
+   ('r_muchos_estado_idx', 0, '8680 kB')
+   ('r_muchos_fecha_confirmacion_idx', 0, '23 MB')
+   ('r_muchos_fecha_creacion_idx', 0, '24 MB')
+   ('r_muchos_fecha_fin_idx', 0, '11 MB')
+   ('r_muchos_fecha_inicio_idx', 0, '11 MB')
+   ('r_muchos_habitacion_id_fecha_inicio_idx', 0, '42 MB')
+   ('r_muchos_habitacion_id_idx', 0, '13 MB')
+   ('r_muchos_huesped_id_idx', 0, '34 MB')
+   ('r_muchos_observaciones_idx', 0, '8928 kB')
+   ('r_muchos_tarifa_noche_idx', 0, '42 MB')
+   ('r_muchos_pkey', 5, '28 MB')
+
+FIN

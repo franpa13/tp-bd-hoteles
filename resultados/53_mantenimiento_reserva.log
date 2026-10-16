@@ -1,0 +1,44 @@
+SET
+Pager usage is off.
+Timing is on.
+--- Antes
+  tabla  | indices 
+---------+---------
+ 1494 MB | 2246 MB
+(1 row)
+
+Time: 1.439 ms
+          indice          |  tam   
+--------------------------+--------
+ ex_reserva_superpuesta   | 625 MB
+ ix_reserva_fact_cov      | 598 MB
+ ix_reserva_huesped_fecha | 452 MB
+ reserva_pkey             | 324 MB
+ ix_reserva_fecha_inicio  | 132 MB
+ ix_reserva_hotel_fecha   | 115 MB
+(6 rows)
+
+Time: 3.058 ms
+--- VACUUM FULL (reescribe la tabla y reconstruye todos los índices; bloqueo ACCESS EXCLUSIVE)
+VACUUM
+Time: 138498.502 ms (02:18.499)
+--- Después
+ tabla  | indices 
+--------+---------
+ 774 MB | 1262 MB
+(1 row)
+
+Time: 3.499 ms
+          indice          |  tam   
+--------------------------+--------
+ ex_reserva_superpuesta   | 470 MB
+ ix_reserva_fact_cov      | 291 MB
+ ix_reserva_huesped_fecha | 226 MB
+ reserva_pkey             | 161 MB
+ ix_reserva_hotel_fecha   | 62 MB
+ ix_reserva_fecha_inicio  | 52 MB
+(6 rows)
+
+Time: 1.081 ms
+VACUUM
+Time: 1028.101 ms (00:01.028)
