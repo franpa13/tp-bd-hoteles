@@ -27,7 +27,7 @@ Motor: **PostgreSQL 16**. Todas las tablas viven en el esquema `hotel`.
 
 ```bash
 git clone <url-del-repo> && cd tp-bd-hoteles
-docker compose up -d                      # levanta PostgreSQL 16 en localhost:5432
+docker compose up -d                      # levanta PostgreSQL 16 en localhost:5433
 cp .env.example .env && set -a && source .env && set +a   # variables de conexión
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt

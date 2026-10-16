@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: hoteles
     ports:
-      - "5432:5432"
+      - "5433:5432"                   # 5433 en Windows para no chocar con un PostgreSQL local
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./sql:/sql:ro                 # los scripts quedan visibles dentro del contenedor
